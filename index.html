@@ -70,6 +70,11 @@ dialog{border:0;border-radius:20px;width:min(560px,94vw);max-height:90vh;padding
 .fb{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}.fb .dd{width:auto;min-width:150px;margin:0}.fb select{margin:0}
 .mini{padding:5px 10px;font-size:12px;border-radius:8px}.acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.acts .dd{width:auto;margin:0}
 .card[draggable=true]{cursor:grab}.col.over{outline:2px dashed var(--p);outline-offset:-4px}
+.ap{background:#fff;border-radius:14px;padding:14px 16px;margin-bottom:10px;box-shadow:0 6px 18px -12px #2f14f566}.ap h4{margin:0 0 4px;font-size:14px}.ap p{margin:4px 0;color:var(--m);font-size:13px;line-height:1.5}.ap p b{color:var(--t)}
+.bd{font-size:11px;font-weight:700;padding:2px 9px;border-radius:99px;margin-left:6px}.bd.menunggu{background:#fef3c7;color:#b45309}.bd.disetujui{background:#dcfce7;color:#15803d}.bd.ditolak{background:#fee2e2;color:#b91c1c}.bd.ditarik{background:#e5e7eb;color:#4b5563}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}.tabs button.on{background:var(--p);color:#fff;border-color:var(--p)}
+.ck{display:flex;gap:10px;align-items:center;padding:9px 12px;border-radius:10px;background:#fff;margin-bottom:6px}.ck input[type=checkbox]{width:auto;margin:0}.ck>div{flex:1;min-width:0}.ck.done b{text-decoration:line-through;color:var(--m)}.ck small{color:var(--m);display:block}.ck small.late{color:#dc2626}
+.acts.tim button.p{background:var(--p);color:#fff;border-color:var(--p)}
 @media(max-width:1100px){.shell{grid-template-columns:200px 1fr}.right{grid-column:1/-1;border-top:1px solid var(--b)}}
 @media(max-width:720px){body{padding:0}.shell{grid-template-columns:1fr;border-radius:0}.side{flex-direction:row;overflow-x:auto;padding:12px}.logo,.nav.on:after{display:none}.nav{width:auto;white-space:nowrap}.nav.out{margin:0}.stats{grid-template-columns:repeat(2,1fr)}.main{padding:16px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -87,6 +92,8 @@ dialog{border:0;border-radius:20px;width:min(560px,94vw);max-height:90vh;padding
  <aside class="side"><div class="logo"><img data-logo alt="MJC48"><span>Intranet<br>Staff</span></div>
   <button class="nav" data-v="dash" onclick="go('dash')">▦ Dashboard</button>
   <button class="nav" data-v="board" onclick="go('board')">☰ Papan kerja</button>
+  <button class="nav" data-v="div" onclick="go('div')">❖ Divisi</button>
+  <button class="nav" data-v="appr" onclick="go('appr')">✔ Persetujuan<span id="apN"></span></button>
   <button class="nav" data-v="cal" onclick="go('cal')">▣ Kalender</button>
   <button class="nav" data-v="team" onclick="go('team')">☺ Tim</button>
   <button id="bStat" class="nav hide" data-v="stat" onclick="go('stat')">▤ Statistik</button>
@@ -98,7 +105,7 @@ dialog{border:0;border-radius:20px;width:min(560px,94vw);max-height:90vh;padding
  <aside class="right" id="rp"></aside>
 </div>
 
-<dialog id="dj"></dialog><dialog id="ds"></dialog><dialog id="de"></dialog><dialog id="dp"></dialog>
+<dialog id="dj"></dialog><dialog id="ds"></dialog><dialog id="de"></dialog><dialog id="dp"></dialog><dialog id="da"></dialog>
 <dialog id="dr"><h3>Request baru</h3>
 <input id="rj" placeholder="Judul">
 <select id="rt"><option value="edit_foto">Edit foto</option><option value="edit_video">Edit video</option><option value="thumbnail">Thumbnail</option><option value="desain">Desain</option><option value="lainnya">Lainnya</option></select>
@@ -116,7 +123,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const url=u=>/^https?:\/\//i.test(u||'')?esc(u):'#';
 const ST={antrean:['Antrean','#8a8fb0'],dikerjakan:['Dikerjakan','#2f14f5'],review:['Review','#f59e0b'],revisi:['Revisi','#ef4444'],selesai:['Selesai','#22c9a6']};
 const needPw=/type=(invite|recovery)/.test(location.hash);
-let me=null,staff={},jobs=[],cur=null,sub=false,view='dash',calM=new Date();
+let me=null,staff={},jobs=[],pend=[],appr=[],dtasks=[],curDiv='',cur=null,sub=false,view='dash',calM=new Date();
 const lead=()=>['admin','manager'].includes(me.staff_role);
 const fmt=d=>d?new Date(d).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'}):'-';
 const late=j=>j.deadline&&j.status!=='selesai'&&new Date(j.deadline)<new Date();
@@ -137,10 +144,13 @@ async function init(){
   me=staff[session.user.id];
   if(!me||me.aktif===false)return show('nope');
   if(me.must_change_password){$('pwT').textContent='Ganti password awal';$('pwS').textContent='Demi keamanan, buat password barumu sebelum melanjutkan.';return show('pw')}
-  $('bReq').classList.toggle('hide',me.staff_role==='editor');
+  $('bReq').classList.remove('hide');
   $('bStaff').classList.toggle('hide',me.staff_role!=='admin');$('bStat').classList.toggle('hide',!lead());
   show('app');await load();
-  if(!sub){sub=true;sb.channel('jobs').on('postgres_changes',{event:'*',schema:'public',table:'jobs'},load).subscribe()}
+  if(!sub){sub=true;sb.channel('jobs')
+    .on('postgres_changes',{event:'*',schema:'public',table:'jobs'},load)
+    .on('postgres_changes',{event:'*',schema:'public',table:'job_approvals'},load)
+    .on('postgres_changes',{event:'*',schema:'public',table:'div_tasks'},load).subscribe()}
 }
 const LOGIN_DOMAIN='@mjc48.com';
 async function login(){
@@ -157,15 +167,21 @@ async function setPw(){
   await sb.rpc('tandai_password_diganti');history.replaceState(null,'',location.pathname);location.reload()}
 async function loadStaff(){const{data}=await sb.from('staff_profiles').select('*').order('nama');staff={};(data||[]).forEach(s=>staff[s.id]=s)}
 async function load(){
-  const{data,error}=await sb.from('jobs').select('*').neq('status','dibatalkan').order('deadline',{ascending:true,nullsFirst:false});
-  if(error)return toast(error);jobs=data;render();
+  const[a,b,c]=await Promise.all([
+    sb.from('jobs').select('*').neq('status','dibatalkan').order('deadline',{ascending:true,nullsFirst:false}),
+    sb.from('job_approvals').select('*').order('created_at',{ascending:false}).limit(300),
+    sb.from('div_tasks').select('*').order('created_at',{ascending:false}).limit(500)]);
+  if(a.error)return toast(a.error);
+  const all=a.data||[];jobs=all.filter(j=>!j.pending_approval);pend=all.filter(j=>j.pending_approval);
+  appr=b.error?[]:(b.data||[]);dtasks=c.error?[]:(c.data||[]);render();
 }
 function go(v){view=v;render()}
 function filt(){const q=($('q').value||'').toLowerCase();return jobs.filter(j=>(!q||(j.judul+' '+nm(j.assignee_id)).toLowerCase().includes(q))&&(!F.st||j.status===F.st)&&(!F.as||(F.as==='_none'?!j.assignee_id:j.assignee_id===F.as))&&(!F.jn||j.jenis===F.jn)&&(!F.pr||j.prioritas===F.pr))}
 
 function render(){
   document.querySelectorAll('.nav[data-v]').forEach(n=>n.classList.toggle('on',n.dataset.v===view));
-  $('view').innerHTML=view==='dash'?dash():view==='board'?fbar()+board():view==='team'?team():view==='stat'?stat():fbar()+cal();
+  const pn=apprPending();$('apN').textContent=pn?' ('+pn+')':'';
+  $('view').innerHTML=view==='dash'?dash():view==='board'?fbar()+board():view==='div'?divView():view==='appr'?apprView():view==='team'?team():view==='stat'?stat():fbar()+cal();
   right();
 }
 function row(j){const[l,c]=ST[j.status];return `<tr class="rw" onclick="openJob('${j.id}')"><td><b>${esc(j.judul)}</b></td><td>${j.jenis.replace('_',' ')}</td><td>${esc(nm(j.assignee_id))}</td><td><span class="pill" style="color:${c}"><span class="dot" style="background:${c}"></span>${l}</span></td><td class="${late(j)?'late':''}">${fmt(j.deadline)}</td></tr>`}
@@ -175,13 +191,13 @@ function dash(){
   const L=filt().filter(j=>j.status!=='selesai').slice(0,8);
   return `<div class="hero"><h2>Selamat ${g}, ${esc(me.nama.split(' ')[0])}</h2>
   <p>${act.length} pekerjaan sedang berjalan, ${mine.length} ditugaskan kepadamu${tl.length?`, dan ${tl.length} sudah lewat deadline`:''}.</p>
-  <button onclick="go('board')">Buka papan kerja</button></div>
+  <button onclick="go('board')">Buka papan kerja</button>${apprPending()?`<button onclick="go('appr')" style="margin-left:8px">${isA()?apprPending()+' pengajuan menunggu':'Pengajuanku ('+apprPending()+')'}</button>`:''}</div>
   <h3 class="sec">Status pekerjaan</h3><div class="stats">${Object.entries(ST).map(([k,[l,c]])=>`<button class="stat" onclick="go('board')"><span><span class="dot" style="background:${c}"></span>${l}</span><b>${jobs.filter(j=>j.status===k).length}</b></button>`).join('')}</div>
   <h3 class="sec">Pekerjaan berjalan</h3>${fbar()}<div class="tbl">${L.length?`<table><tr><th>Judul<th>Jenis<th>Penanggung jawab<th>Status<th>Deadline</tr>${L.map(row).join('')}</table>`:'<div class="empty">Belum ada pekerjaan. Buat request pertama lewat tombol di kanan atas.</div>'}</div>`;
 }
-function board(){
+function board(src){const base=src||filt();
   return `<div id="board">${Object.entries(ST).map(([k,[l]])=>{
-    let L=filt().filter(j=>j.status===k);
+    let L=base.filter(j=>j.status===k);
     if(k==='selesai')L=L.sort((a,b)=>new Date(b.selesai_at)-new Date(a.selesai_at)).slice(0,15);
     return `<div class="col" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')" ondrop="dropC(event,'${k}',this)"><h4>${l} (${L.length})</h4>${L.map(card).join('')}</div>`}).join('')}</div>`;
 }
@@ -201,7 +217,7 @@ function right(){
   const up=jobs.filter(j=>j.deadline&&j.status!=='selesai').slice(0,5);
   const eds=Object.values(staff).filter(s=>s.staff_role==='editor'&&s.aktif),act=jobs.filter(j=>['dikerjakan','revisi'].includes(j.status));
   const mx=Math.max(3,...eds.map(e=>act.filter(j=>j.assignee_id===e.id).length));
-  $('rp').innerHTML=`<div class="me" style="cursor:pointer" title="Profil saya" onclick="profUI()"><div><b>${esc(me.nama)}</b><small>${esc(me.staff_role)}</small></div><div class="av">${esc(me.nama[0]||'?')}</div></div>
+  $('rp').innerHTML=`<div class="me" style="cursor:pointer" title="Profil saya" onclick="profUI()"><div><b>${esc(me.nama)}</b><small>${esc(me.staff_role)}${me.staff_role==='manager'&&(me.tim||[]).length?' · '+me.tim.map(timLbl).join(', '):''}${me.divisi?' · '+esc(me.divisi.replace('_',' ')):''}</small></div><div class="av">${esc(me.nama[0]||'?')}</div></div>
   <b>Minggu ini</b><div class="week">${wk}</div>
   <b style="margin-top:4px">Deadline terdekat</b><div class="panel">${up.map(j=>`<div class="item" onclick="openJob('${j.id}')"><span class="dot" style="background:${ST[j.status][1]}"></span><div><b>${esc(j.judul)}</b><small class="${late(j)?'late':''}">${fmt(j.deadline)}</small></div></div>`).join('')||'<div class="empty">Tidak ada deadline.</div>'}</div>
   ${lead()?`<b style="margin-top:14px">Beban kerja editor</b><div class="panel">${eds.map(e=>{const c=act.filter(j=>j.assignee_id===e.id).length;return `<div class="item" style="cursor:default"><div><b>${esc(e.nama)}</b><small>${c} aktif</small><div class="bar"><i style="width:${c/mx*100}%"></i></div></div></div>`}).join('')||'<div class="empty">Belum ada editor aktif.</div>'}</div>`:''}`;
@@ -211,25 +227,27 @@ const EV={assign_job:'ditugaskan',kirim_hasil:'hasil_dikirim',batalkan_job:'diba
 async function act(fn,args){if(await rpc(fn,args)){const ev=fn==='review_job'?(args.p_keputusan==='setuju'?'disetujui':'revisi'):EV[fn];if(ev)notif(ev,args.p_job);$('dj').close();load()}}
 async function rpc(fn,args){const{error}=await sb.rpc(fn,args);if(error){toast(error);return false}return true}
 async function openJob(id){
-  cur=jobs.find(j=>j.id==id);const j=cur,mine=j.assignee_id===me.id;
+  cur=jobs.find(j=>j.id==id);if(!cur)return toast('Job tidak ditemukan atau belum disetujui.');const j=cur,mine=j.assignee_id===me.id;
   const[s,r,c]=await Promise.all([
     sb.from('job_submissions').select('*').eq('job_id',id).order('versi'),
     sb.from('job_reviews').select('*').eq('job_id',id),
     sb.from('job_comments').select('*').eq('job_id',id).order('created_at')]);
   const rev={};(r.data||[]).forEach(x=>rev[x.submission_id]=x);
   const eds=Object.values(staff).filter(x=>x.staff_role==='editor'&&x.aktif);
+  const pj=appr.filter(x=>x.job_id==id&&x.status==='menunggu');
   let a='';
   if(me.staff_role==='editor'&&j.status==='antrean'&&(!j.assignee_id||mine))
     a+=`<button class="p" onclick="act('mulai_job',{p_job:'${id}'})">Mulai kerjakan</button>`;
-  if(lead()&&['antrean','dikerjakan','revisi'].includes(j.status))
+  if(lead()&&['antrean','dikerjakan','revisi'].includes(j.status)&&(isA()||!j.assignee_id))
     a+=`<div class="row"><select id="asg">${eds.map(e=>`<option value="${e.id}" ${e.id===j.assignee_id?'selected':''}>${esc(e.nama)}</option>`).join('')}</select><button onclick="act('assign_job',{p_job:'${id}',p_assignee:$('asg').value})">Tugaskan</button></div>`;
   if(mine&&['dikerjakan','revisi'].includes(j.status))
     a+=`<input id="lnk" placeholder="Link hasil (Drive)"><input id="cat" placeholder="Catatan (opsional)"><button class="p" onclick="act('kirim_hasil',{p_job:'${id}',p_link:$('lnk').value,p_catatan:$('cat').value||null})">Kirim hasil</button>`;
   if(lead()&&j.status==='review')
     a+=`<input id="rc" placeholder="Catatan (wajib jika minta revisi)"><div class="row"><button class="p" onclick="act('review_job',{p_job:'${id}',p_keputusan:'setuju',p_catatan:$('rc').value||null})">Setujui</button><button onclick="act('review_job',{p_job:'${id}',p_keputusan:'revisi',p_catatan:$('rc').value})">Minta revisi</button></div>`;
-  if(j.status!=='selesai'&&(lead()||(j.requester_id===me.id&&j.status==='antrean')))
-    a+=`<button class="d" onclick="if(confirm('Batalkan job ini?'))act('batalkan_job',{p_job:'${id}'})">Batalkan job</button>`;
-  if(j.status!=='selesai'&&(lead()||(j.requester_id===me.id&&j.status==='antrean')))a+=`<button onclick="editUI()">Edit job</button>`;
+  if(j.status!=='selesai'&&isA())
+    a+=`<button class="d" onclick="if(confirm('Batalkan job ini?'))act('batalkan_job',{p_job:'${id}'})">Batalkan job</button><button onclick="editUI()">Edit job</button>`;
+  else if(j.status!=='selesai'&&(lead()||mine||j.requester_id===me.id))
+    a+=`<button onclick="ajukanUI()">Ajukan perubahan ke admin</button>`;
   const vers=(s.data||[]).map(v=>{const x=rev[v.id];return `<div class="hist"><b>v${v.versi}</b> <a href="${url(v.link_hasil)}" target="_blank" rel="noopener">buka hasil</a> ${esc(v.catatan||'')}${x?`<br><small>${x.keputusan==='setuju'?'✅ Disetujui':'🔁 Revisi'}: ${esc(x.catatan||'')} (${esc(staff[x.reviewer_id]?.nama)})</small>`:''}</div>`}).join('');
   const cms=(c.data||[]).map(x=>`<div class="hist"><small>${esc(staff[x.user_id]?.nama)}, ${fmt(x.created_at)}</small><br>${esc(x.isi)}</div>`).join('');
   $('dj').innerHTML=`<h3>${esc(j.judul)}</h3><p>${esc(j.deskripsi||'')}</p>
@@ -237,7 +255,7 @@ async function openJob(id){
   Request dari ${esc(staff[j.requester_id]?.nama)}, ditugaskan ke ${esc(staff[j.assignee_id]?.nama||'-')}
   ${j.referensi_url?`<br><a href="${url(j.referensi_url)}" target="_blank" rel="noopener">Referensi</a>`:''}</small>
   <h4 class="s">Riwayat versi</h4>${vers||'<small>Belum ada hasil.</small>'}
-  <h4 class="s">Aksi</h4>${a||'<small>Tidak ada aksi untukmu.</small>'}
+  <h4 class="s">Aksi</h4>${pj.map(x=>`<div class="hist"><small>⏳ ${APL[x.jenis]} menunggu persetujuan admin (${esc(staff[x.diminta_oleh]?.nama||'-')})</small></div>`).join('')}${a||'<small>Tidak ada aksi untukmu.</small>'}
   <h4 class="s">Komentar</h4>${cms}<div class="row"><input id="cm" placeholder="Tulis komentar"><button style="flex:0" onclick="komen()">Kirim</button></div>
   <button onclick="$('dj').close()">Tutup</button>`;
   if(!$('dj').open)$('dj').showModal();
@@ -249,10 +267,13 @@ async function komen(){
 }
 async function kirimReq(){
   const j=$('rj').value.trim();if(!j)return toast('Judul wajib diisi');
-  const{data:nj,error}=await sb.from('jobs').insert({judul:j,jenis:$('rt').value,deskripsi:$('rd').value||null,
-    referensi_url:$('rf').value||null,format_output:$('ro').value||null,prioritas:$('rp2').value,
-    deadline:$('rl').value?new Date($('rl').value).toISOString():null,requester_id:me.id}).select('id').single();
-  if(error)return toast(error);if(nj)notif('job_baru',nj.id);$('dr').close();load();
+  const{data,error}=await sb.rpc('buat_job',{p_judul:j,p_jenis:$('rt').value,p_deskripsi:$('rd').value||null,
+    p_referensi:$('rf').value||null,p_format:$('ro').value||null,p_prioritas:$('rp2').value,
+    p_deadline:$('rl').value?new Date($('rl').value).toISOString():null});
+  if(error)return toast(error);
+  if(data&&data.pending){notif('approval_diajukan',data.job_id,data.approval_id);alert('Request terkirim. Job masuk antrean setelah disetujui admin.')}
+  else if(data)notif('job_baru',data.job_id);
+  $('dr').close();load();
 }
 
 const ROLES=['admin','manager','editor','kreatif'],DIV=['editor_foto','editor_video','kreatif'],isA=()=>me.staff_role==='admin';
@@ -267,7 +288,95 @@ function fbar(){return `<div class="fb"><select onchange="F.st=this.value;render
 ${Object.values(F).some(Boolean)?'<button class="mini" onclick="resetF()">Reset</button>':''}</div>`}
 
 /* notifikasi email (dikirim server lewat Gmail) */
-const notif=(event,job_id)=>{sb.functions.invoke('notif-staff',{body:{event,job_id}}).catch(()=>{})};
+const notif=(event,job_id,approval_id)=>{sb.functions.invoke('notif-staff',{body:{event,job_id,approval_id}}).catch(()=>{})};
+
+/* ===== persetujuan admin, divisi, task list divisi ===== */
+const TIMS=[['miii','MIII'],['jii','JII'],['cii','CII'],['trainee','Trainee']],timLbl=k=>(TIMS.find(t=>t[0]===k)||[k,k])[1];
+const APL={request_baru:'Request job baru',perpanjang_deadline:'Perpanjang deadline',batalkan:'Batalkan job',edit:'Ubah detail job',ganti_pic:'Ganti penanggung jawab'};
+const DVL={editor_foto:'Editor Foto',editor_video:'Editor Video',kreatif:'Kreatif'};
+const JDIV={edit_foto:'editor_foto',edit_video:'editor_video',thumbnail:'kreatif',desain:'kreatif'};
+const apprPending=()=>appr.filter(a=>a.status==='menunggu'&&(isA()||a.diminta_oleh===me.id)).length;
+const allJobs=()=>jobs.concat(pend);
+async function tglTim(id,k){const c=staff[id].tim||[];await upd(id,{tim:c.includes(k)?c.filter(x=>x!==k):[...c,k]})}
+
+function apprDetail(a){
+  const p=a.payload||{},l=p.lama||{},j=allJobs().find(x=>x.id==a.job_id);
+  if(a.jenis==='request_baru')return j?`<p><b>${esc(j.judul)}</b> | ${esc(j.jenis.replace('_',' '))} | ${esc(j.prioritas)}<br>Deadline ${fmt(j.deadline)}${j.deskripsi?'<br>'+esc(j.deskripsi):''}${j.format_output?'<br>Format: '+esc(j.format_output):''}${j.referensi_url?'<br><a href="'+url(j.referensi_url)+'" target="_blank" rel="noopener">Referensi</a>':''}</p>`:'';
+  if(a.jenis==='perpanjang_deadline')return `<p>Deadline: ${fmt(l.deadline)} → <b>${fmt(p.deadline)}</b></p>`;
+  if(a.jenis==='ganti_pic')return `<p>Penanggung jawab: ${l.assignee?esc(nm(l.assignee)):'-'} → <b>${esc(nm(p.assignee))}</b></p>`;
+  if(a.jenis==='edit'){
+    const rows=[['Judul',j?.judul,p.judul],['Jenis',j?.jenis,p.jenis],['Prioritas',j?.prioritas,p.prioritas],['Deadline',j?.deadline?fmt(j.deadline):'-',p.deadline?fmt(p.deadline):'-'],['Deskripsi',j?.deskripsi||'',p.deskripsi||''],['Referensi',j?.referensi_url||'',p.referensi||''],['Format',j?.format_output||'',p.format||'']];
+    if(a.status==='menunggu'){const ch=rows.filter(x=>String(x[1]??'')!==String(x[2]??''));return `<p>${ch.map(x=>`${x[0]}: ${esc(x[1]||'-')} → <b>${esc(x[2]||'-')}</b>`).join('<br>')||'Tidak ada perubahan.'}</p>`}
+    return `<p>${rows.filter(x=>x[2]).map(x=>`${x[0]}: <b>${esc(x[2])}</b>`).join('<br>')}</p>`}
+  return '<p>Job akan dibatalkan.</p>';
+}
+function apprView(){
+  const adm=isA(),L=adm?appr:appr.filter(a=>a.diminta_oleh===me.id);
+  const W=L.filter(a=>a.status==='menunggu'),D=L.filter(a=>a.status!=='menunggu').slice(0,30);
+  const item=a=>{const j=allJobs().find(x=>x.id==a.job_id);
+    return `<div class="ap"><h4>${APL[a.jenis]||esc(a.jenis)}<span class="bd ${a.status}">${a.status}</span></h4>
+    <p><b>${esc(j?.judul||'(job tidak ditemukan)')}</b> | oleh ${esc(staff[a.diminta_oleh]?.nama||'-')} | ${fmt(a.created_at)}</p>
+    ${apprDetail(a)}${a.alasan?`<p>Alasan: ${esc(a.alasan)}</p>`:''}${a.catatan_keputusan?`<p>Catatan admin: ${esc(a.catatan_keputusan)}</p>`:''}
+    ${a.status==='menunggu'?`<div class="acts">${adm?`<button class="p mini" onclick="putus('${a.id}',true)">Setujui</button><button class="mini d" onclick="putus('${a.id}',false)">Tolak</button>`:''}${a.diminta_oleh===me.id?`<button class="mini" onclick="tarikAp('${a.id}')">Tarik pengajuan</button>`:''}${jobs.find(x=>x.id==a.job_id)?`<button class="mini" onclick="openJob('${a.job_id}')">Buka job</button>`:''}</div>`:''}</div>`};
+  return `<h3 class="sec"><span>Persetujuan${adm?' admin':''}</span></h3>
+  <b>Menunggu (${W.length})</b><div style="margin-top:10px">${W.map(item).join('')||'<div class="empty">Tidak ada pengajuan yang menunggu.</div>'}</div>
+  <h3 class="sec"><span>Riwayat</span></h3>${D.map(item).join('')||'<div class="empty">Belum ada riwayat.</div>'}`;
+}
+async function putus(id,ok){
+  const a=appr.find(x=>x.id===id);if(!a)return;let c=null;
+  if(!ok){c=prompt('Alasan penolakan (opsional):');if(c===null)return}
+  else if(!confirm('Setujui: '+APL[a.jenis].toLowerCase()+'?'))return;
+  const{error}=await sb.rpc('putuskan_approval',{p_id:id,p_setuju:ok,p_catatan:c});
+  if(error)return toast(error);
+  notif('approval_diputuskan',a.job_id,id);
+  if(ok){const ev={request_baru:'job_baru',ganti_pic:'ditugaskan',batalkan:'dibatalkan',edit:'diedit'}[a.jenis];if(ev)notif(ev,a.job_id)}
+  load()}
+async function tarikAp(id){if(!confirm('Tarik pengajuan ini?'))return;const{error}=await sb.rpc('batalkan_pengajuan',{p_id:id});if(error)return toast(error);load()}
+
+function ajukanUI(){const j=cur;
+  $('da').innerHTML=`<h3>Ajukan perubahan</h3><small>Perubahan baru berlaku setelah disetujui admin.</small>
+  <h4 class="s">Jenis pengajuan</h4><select id="aj" onchange="ajForm()">${opt([['perpanjang_deadline',APL.perpanjang_deadline],...(j.assignee_id?[['ganti_pic',APL.ganti_pic]]:[]),['edit',APL.edit],['batalkan',APL.batalkan]],'perpanjang_deadline')}</select>
+  <div id="ajf"></div><textarea id="aja" rows="3" placeholder="Alasan pengajuan (wajib)"></textarea>
+  <div class="row"><button onclick="$('da').close()">Batal</button><button class="p" onclick="kirimAjuan()">Kirim pengajuan</button></div>`;
+  ajForm();$('da').showModal()}
+function ajForm(){const j=cur,t=$('aj').value;
+  const eds=Object.values(staff).filter(x=>x.staff_role==='editor'&&x.aktif&&x.id!==j.assignee_id);
+  $('ajf').innerHTML=t==='perpanjang_deadline'?`<h4 class="s">Deadline baru</h4><input id="ajd" type="datetime-local" value="${loc(j.deadline)}">`
+   :t==='ganti_pic'?`<h4 class="s">Penanggung jawab baru</h4><select id="ajp">${eds.map(e=>`<option value="${e.id}">${esc(e.nama)}</option>`).join('')}</select>`
+   :t==='edit'?`<h4 class="s">Detail baru</h4><input id="aje" value="${esc(j.judul)}"><select id="ajt">${opt(JENIS,j.jenis)}</select><textarea id="ajx" rows="3" placeholder="Deskripsi">${esc(j.deskripsi||'')}</textarea><input id="ajr" placeholder="Referensi (link)" value="${esc(j.referensi_url||'')}"><input id="ajo" placeholder="Format output" value="${esc(j.format_output||'')}"><div class="row"><select id="ajq">${opt(PRI.map(p=>[p,p]),j.prioritas)}</select><input id="ajl" type="datetime-local" value="${loc(j.deadline)}"></div>`
+   :`<p><small>Job ini akan dibatalkan setelah admin menyetujui.</small></p>`}
+async function kirimAjuan(){
+  const j=cur,t=$('aj').value,alasan=($('aja').value||'').trim();let p={};
+  if(!alasan)return toast('Alasan wajib diisi');
+  if(t==='perpanjang_deadline'){if(!$('ajd').value)return toast('Isi deadline baru');p={deadline:new Date($('ajd').value).toISOString()}}
+  else if(t==='ganti_pic'){const v=$('ajp')&&$('ajp').value;if(!v)return toast('Pilih penanggung jawab baru');p={assignee:v}}
+  else if(t==='edit'){if(!$('aje').value.trim())return toast('Judul wajib diisi');p={judul:$('aje').value,jenis:$('ajt').value,deskripsi:$('ajx').value,referensi:$('ajr').value,format:$('ajo').value,prioritas:$('ajq').value,deadline:$('ajl').value?new Date($('ajl').value).toISOString():''}}
+  const{data,error}=await sb.rpc('ajukan_approval',{p_job:String(j.id),p_jenis:t,p_payload:p,p_alasan:alasan});
+  if(error)return toast(error);
+  notif('approval_diajukan',j.id,data&&data.approval_id);$('da').close();$('dj').close();await load();alert('Pengajuan dikirim ke admin.')}
+
+/* divisi: checklist tugas + papan job per divisi */
+const myDivs=()=>lead()||!me.divisi?Object.keys(DVL):[me.divisi];
+const jobDiv=j=>JDIV[j.jenis]||staff[j.assignee_id]?.divisi||null;
+const ckItem=t=>{const od=!t.selesai&&t.deadline&&new Date(t.deadline)<new Date();
+  return `<div class="ck ${t.selesai?'done':''}"><input type="checkbox" ${t.selesai?'checked':''} onchange="cekDT('${t.id}',this.checked)"><div><b>${esc(t.judul)}</b><small class="${od?'late':''}">${t.assignee_id?esc(nm(t.assignee_id)):'Semua di divisi'}${t.deadline?' | ⏰ '+fmt(t.deadline):''}${t.selesai&&t.selesai_oleh?' | selesai oleh '+esc(staff[t.selesai_oleh]?.nama||'-'):''}</small></div>${lead()||t.dibuat_oleh===me.id?`<button class="mini d" onclick="hapusDT('${t.id}')">Hapus</button>`:''}</div>`};
+function divView(){
+  const ds=myDivs();if(!ds.includes(curDiv))curDiv=ds[0];
+  const L=filt().filter(j=>{const d=jobDiv(j);return d===curDiv||d===null});
+  const T=dtasks.filter(t=>t.divisi===curDiv),open=T.filter(t=>!t.selesai).sort((a,b)=>(a.deadline?new Date(a.deadline):8e15)-(b.deadline?new Date(b.deadline):8e15)),done=T.filter(t=>t.selesai).slice(0,10);
+  const mem=Object.values(staff).filter(s=>s.aktif&&s.divisi===curDiv);
+  return `<h3 class="sec"><span>Divisi</span></h3><div class="tabs">${ds.map(d=>`<button class="${d===curDiv?'on':''}" onclick="curDiv='${d}';render()">${DVL[d]}</button>`).join('')}</div>
+  <h3 class="sec"><span>Task list ${DVL[curDiv]} (${open.length} terbuka)</span></h3>
+  <div class="panel" style="margin-bottom:12px"><div class="row"><input id="dtj" placeholder="Tugas baru, mis. rapikan folder aset" onkeydown="if(event.key==='Enter')tambahDT()"><input id="dtd" type="datetime-local"></div>
+  <div class="row"><select id="dta"><option value="">Semua di divisi ini</option>${mem.map(s=>`<option value="${s.id}">${esc(s.nama)}</option>`).join('')}</select><button class="p" onclick="tambahDT()">Tambah task</button></div></div>
+  ${open.concat(done).map(ckItem).join('')||'<div class="empty">Belum ada task di divisi ini.</div>'}
+  <h3 class="sec"><span>Papan job ${DVL[curDiv]}</span></h3>${board(L)}`;
+}
+async function tambahDT(){const j=($('dtj').value||'').trim();if(!j)return toast('Isi judul task');
+  const{error}=await sb.from('div_tasks').insert({divisi:curDiv,judul:j,deadline:$('dtd').value?new Date($('dtd').value).toISOString():null,assignee_id:$('dta').value||null});
+  if(error)return toast(error);load()}
+async function cekDT(id,v){const{error}=await sb.from('div_tasks').update({selesai:v,selesai_at:v?new Date().toISOString():null,selesai_oleh:v?me.id:null}).eq('id',id);if(error)toast(error);load()}
+async function hapusDT(id){if(!confirm('Hapus task ini?'))return;const{error}=await sb.from('div_tasks').delete().eq('id',id);if(error)toast(error);load()}
 async function decide(j,k,c){if(await rpc('review_job',{p_job:j.id,p_keputusan:k,p_catatan:c})){notif(k==='setuju'?'disetujui':'revisi',j.id);load()}}
 
 /* drag kartu: hanya perpindahan yang sah menurut alur review */
@@ -308,9 +417,9 @@ function team(){
   const q=($('q').value||'').toLowerCase(),O=ROLES;
   const L=Object.values(staff).filter(s=>!q||(s.nama+' '+(s.divisi||'')).toLowerCase().includes(q)).sort((a,b)=>O.indexOf(a.staff_role)-O.indexOf(b.staff_role)||a.nama.localeCompare(b.nama));
   return `<h3 class="sec"><span>Tim (${L.length})</span></h3><div class="tg">${L.map(s=>{const n=jobs.filter(j=>j.assignee_id===s.id&&['dikerjakan','revisi'].includes(j.status)).length;
-  const ad=isA()&&s.id!==me.id?`<div class="acts"><select onchange="upd('${s.id}',{staff_role:this.value})">${opt(ROLES.map(r=>[r,r]),s.staff_role)}</select>
-  <button class="mini" onclick="tglAktif('${s.id}',${!s.aktif})">${s.aktif?'Nonaktifkan':'Aktifkan'}</button><button class="mini" onclick="resetPw('${s.id}')">Reset password</button><button class="mini d" onclick="hapusStaff('${s.id}')">Hapus</button></div>`:'';
-  return `<div class="tc ${s.aktif?'':'off'}"><div class="av">${esc(s.nama[0]||'?')}</div><div><b>${esc(s.nama)}</b><small>${esc(s.staff_role)}${s.divisi?' | '+esc(s.divisi.replace('_',' ')):''}${s.username?' | @'+esc(s.username):''}</small><small>${s.aktif?(s.staff_role==='editor'?n+' pekerjaan aktif':'Aktif'):'Nonaktif'}${s.must_change_password?' | belum ganti password':''}</small>${ad}</div></div>`}).join('')||'<div class="empty">Belum ada staff.</div>'}</div>`;
+  const ad=isA()&&s.id!==me.id?`<div class="acts"><select onchange="upd('${s.id}',{staff_role:this.value})">${opt(ROLES.map(r=>[r,r]),s.staff_role)}</select>${['editor','kreatif'].includes(s.staff_role)?`<select onchange="upd('${s.id}',{divisi:this.value||null})">${opt(DIV.map(r=>[r,DVL[r]]),s.divisi||'','- tanpa divisi -')}</select>`:''}
+  <button class="mini" onclick="tglAktif('${s.id}',${!s.aktif})">${s.aktif?'Nonaktifkan':'Aktifkan'}</button><button class="mini" onclick="resetPw('${s.id}')">Reset password</button><button class="mini d" onclick="hapusStaff('${s.id}')">Hapus</button></div>${s.staff_role==='manager'?`<div class="acts tim"><small style="margin:auto 4px auto 0">Tim:</small>${TIMS.map(([k,l])=>`<button class="mini ${(s.tim||[]).includes(k)?'p':''}" onclick="tglTim('${s.id}','${k}')">${l}</button>`).join('')}</div>`:''}`:'';
+  return `<div class="tc ${s.aktif?'':'off'}"><div class="av">${esc(s.nama[0]||'?')}</div><div><b>${esc(s.nama)}</b><small>${esc(s.staff_role)}${s.divisi?' | '+esc(s.divisi.replace('_',' ')):''}${s.username?' | @'+esc(s.username):''}${s.staff_role==='manager'?' | tim '+((s.tim||[]).map(timLbl).join(', ')||'belum diatur'):''}</small><small>${s.aktif?(s.staff_role==='editor'?n+' pekerjaan aktif':'Aktif'):'Nonaktif'}${s.must_change_password?' | belum ganti password':''}</small>${ad}</div></div>`}).join('')||'<div class="empty">Belum ada staff.</div>'}</div>`;
 }
 async function ks(body){
   const{data,error}=await sb.functions.invoke('kelola-staff',{body});
@@ -322,7 +431,7 @@ async function resetPw(id){const p=prompt('Password sementara untuk '+staff[id].
 async function hapusStaff(id){if(!confirm('HAPUS permanen akun '+staff[id].nama+'? Tidak bisa dibatalkan. Kalau ia punya riwayat kerja, nonaktifkan saja.'))return;if(await ks({action:'hapus',id})){await loadStaff();render()}}
 
 /* profil saya */
-function profUI(){$('dp').innerHTML=`<h3>Profil saya</h3><small>${esc(me.nama)} | ${esc(me.staff_role)}${me.username?' | @'+esc(me.username):''}</small>
+function profUI(){$('dp').innerHTML=`<h3>Profil saya</h3><small>${esc(me.nama)} | ${esc(me.staff_role)}${me.username?' | @'+esc(me.username):''}${me.staff_role==='manager'?' | tim '+((me.tim||[]).map(timLbl).join(', ')||'belum diatur'):''}${me.divisi?' | '+esc(DVL[me.divisi]||me.divisi):''}</small>
 <h4 class="s">Email untuk notifikasi dan lupa password</h4><input id="pe" type="email" placeholder="email@contoh.com" value="${esc(me.email_kontak||'')}"><button onclick="simpanEmail()">Simpan email</button>
 <h4 class="s">Ganti password</h4><input id="p1" type="password" placeholder="Password baru (min. 8 karakter)" autocomplete="new-password"><input id="p2" type="password" placeholder="Ulangi password baru" autocomplete="new-password">
 <button class="p" onclick="gantiPw()">Ganti password</button><div class="row" style="margin-top:14px"><button onclick="$('dp').close()">Tutup</button></div>`;$('dp').showModal()}
