@@ -73,12 +73,12 @@ dialog{border:0;border-radius:20px;width:min(560px,94vw);max-height:90vh;padding
 </style></head><body>
 
 <div id="auth" class="box hide"><img class="bl" data-logo alt="MJC48"><h3>Masuk Intranet</h3>
-<input id="em" type="email" placeholder="Email"><input id="pw1" type="password" placeholder="Password">
+<input id="em" type="text" placeholder="Username atau email" autocomplete="username" autocapitalize="none" onkeydown="if(event.key==='Enter')$('pw1').focus()"><input id="pw1" type="password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
 <button class="p" style="width:100%" onclick="login()">Masuk</button></div>
 <div id="pw" class="box hide"><img class="bl" data-logo alt="MJC48"><h3>Buat password</h3>
 <input id="np" type="password" placeholder="Password baru (min. 6 karakter)">
 <button class="p" style="width:100%" onclick="setPw()">Simpan password</button></div>
-<div id="nope" class="box hide">Akunmu belum terdaftar sebagai staff. Hubungi admin.<br><br><button onclick="out()">Keluar</button></div>
+<div id="nope" class="box hide">Akunmu belum terdaftar sebagai staff intranet (atau sedang dinonaktifkan). Hubungi admin.<br><br><button onclick="out()">Keluar</button></div>
 
 <div id="app" class="shell hide">
  <aside class="side"><div class="logo"><img data-logo alt="MJC48"><span>Intranet<br>Staff</span></div>
@@ -134,7 +134,15 @@ async function init(){
   show('app');await load();
   if(!sub){sub=true;sb.channel('jobs').on('postgres_changes',{event:'*',schema:'public',table:'jobs'},load).subscribe()}
 }
-async function login(){const{error}=await sb.auth.signInWithPassword({email:$('em').value.trim(),password:$('pw1').value});if(error)return toast(error);init()}
+const LOGIN_DOMAIN='@mjc48.com';
+async function login(){
+  const u=$('em').value.trim().toLowerCase();
+  if(!u||!$('pw1').value)return toast('Isi username dan password');
+  const email=u.includes('@')?u:u+LOGIN_DOMAIN;
+  const{error}=await sb.auth.signInWithPassword({email,password:$('pw1').value});
+  if(error)return toast('Username atau password salah');
+  init();
+}
 async function setPw(){const{error}=await sb.auth.updateUser({password:$('np').value});if(error)return toast(error);history.replaceState(null,'',location.pathname);location.reload()}
 async function loadStaff(){const{data}=await sb.from('staff_profiles').select('*').order('nama');staff={};(data||[]).forEach(s=>staff[s.id]=s)}
 async function load(){
