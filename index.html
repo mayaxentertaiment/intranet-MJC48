@@ -67,6 +67,9 @@ dialog{border:0;border-radius:20px;width:min(560px,94vw);max-height:90vh;padding
 .ddo.on{color:var(--p);font-weight:700}.ddo.on:after{content:"✓"}
 .tg{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}.tc{background:#fff;border-radius:14px;padding:16px;display:flex;gap:12px;align-items:center;box-shadow:0 6px 18px -10px #2f14f555}.tc.off{opacity:.5}.tc small{display:block;color:var(--m);margin-top:2px}.tc .av{width:44px;height:44px}
 .hide{display:none!important}h4.s{margin:16px 0 4px}
+.fb{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}.fb .dd{width:auto;min-width:150px;margin:0}.fb select{margin:0}
+.mini{padding:5px 10px;font-size:12px;border-radius:8px}.acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.acts .dd{width:auto;margin:0}
+.card[draggable=true]{cursor:grab}.col.over{outline:2px dashed var(--p);outline-offset:-4px}
 @media(max-width:1100px){.shell{grid-template-columns:200px 1fr}.right{grid-column:1/-1;border-top:1px solid var(--b)}}
 @media(max-width:720px){body{padding:0}.shell{grid-template-columns:1fr;border-radius:0}.side{flex-direction:row;overflow-x:auto;padding:12px}.logo,.nav.on:after{display:none}.nav{width:auto;white-space:nowrap}.nav.out{margin:0}.stats{grid-template-columns:repeat(2,1fr)}.main{padding:16px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -74,9 +77,9 @@ dialog{border:0;border-radius:20px;width:min(560px,94vw);max-height:90vh;padding
 
 <div id="auth" class="box hide"><img class="bl" data-logo alt="MJC48"><h3>Masuk Intranet</h3>
 <input id="em" type="text" placeholder="Username atau email" autocomplete="username" autocapitalize="none" onkeydown="if(event.key==='Enter')$('pw1').focus()"><input id="pw1" type="password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')login()">
-<button class="p" style="width:100%" onclick="login()">Masuk</button></div>
-<div id="pw" class="box hide"><img class="bl" data-logo alt="MJC48"><h3>Buat password</h3>
-<input id="np" type="password" placeholder="Password baru (min. 6 karakter)">
+<button class="p" style="width:100%" onclick="login()">Masuk</button><button style="width:100%;margin-top:8px;border:0;background:none;color:var(--m)" onclick="lupaPw()">Lupa password?</button></div>
+<div id="pw" class="box hide"><img class="bl" data-logo alt="MJC48"><h3 id="pwT">Buat password</h3><small id="pwS"></small>
+<input id="np" type="password" placeholder="Password baru (min. 8 karakter)" autocomplete="new-password"><input id="np2" type="password" placeholder="Ulangi password baru" autocomplete="new-password">
 <button class="p" style="width:100%" onclick="setPw()">Simpan password</button></div>
 <div id="nope" class="box hide">Akunmu belum terdaftar sebagai staff intranet (atau sedang dinonaktifkan). Hubungi admin.<br><br><button onclick="out()">Keluar</button></div>
 
@@ -86,6 +89,7 @@ dialog{border:0;border-radius:20px;width:min(560px,94vw);max-height:90vh;padding
   <button class="nav" data-v="board" onclick="go('board')">☰ Papan kerja</button>
   <button class="nav" data-v="cal" onclick="go('cal')">▣ Kalender</button>
   <button class="nav" data-v="team" onclick="go('team')">☺ Tim</button>
+  <button id="bStat" class="nav hide" data-v="stat" onclick="go('stat')">▤ Statistik</button>
   <button id="bStaff" class="nav hide" onclick="staffUI()">⚙ Kelola staff</button>
   <button class="nav out" onclick="out()">⎋ Keluar</button></aside>
  <main class="main"><div class="top"><input id="q" placeholder="Cari pekerjaan…" oninput="render()">
@@ -94,7 +98,7 @@ dialog{border:0;border-radius:20px;width:min(560px,94vw);max-height:90vh;padding
  <aside class="right" id="rp"></aside>
 </div>
 
-<dialog id="dj"></dialog><dialog id="ds"></dialog>
+<dialog id="dj"></dialog><dialog id="ds"></dialog><dialog id="de"></dialog><dialog id="dp"></dialog>
 <dialog id="dr"><h3>Request baru</h3>
 <input id="rj" placeholder="Judul">
 <select id="rt"><option value="edit_foto">Edit foto</option><option value="edit_video">Edit video</option><option value="thumbnail">Thumbnail</option><option value="desain">Desain</option><option value="lainnya">Lainnya</option></select>
@@ -129,8 +133,9 @@ async function init(){
   await loadStaff();
   me=staff[session.user.id];
   if(!me||me.aktif===false)return show('nope');
+  if(me.must_change_password){$('pwT').textContent='Ganti password awal';$('pwS').textContent='Demi keamanan, buat password barumu sebelum melanjutkan.';return show('pw')}
   $('bReq').classList.toggle('hide',me.staff_role==='editor');
-  $('bStaff').classList.toggle('hide',me.staff_role!=='admin');
+  $('bStaff').classList.toggle('hide',me.staff_role!=='admin');$('bStat').classList.toggle('hide',!lead());
   show('app');await load();
   if(!sub){sub=true;sb.channel('jobs').on('postgres_changes',{event:'*',schema:'public',table:'jobs'},load).subscribe()}
 }
@@ -143,18 +148,21 @@ async function login(){
   if(error)return toast('Username atau password salah');
   init();
 }
-async function setPw(){const{error}=await sb.auth.updateUser({password:$('np').value});if(error)return toast(error);history.replaceState(null,'',location.pathname);location.reload()}
+async function setPw(){
+  const a=$('np').value;if(a.length<8)return toast('Password minimal 8 karakter');if(a!==$('np2').value)return toast('Konfirmasi password tidak sama');
+  const{error}=await sb.auth.updateUser({password:a});if(error)return toast(error);
+  await sb.rpc('tandai_password_diganti');history.replaceState(null,'',location.pathname);location.reload()}
 async function loadStaff(){const{data}=await sb.from('staff_profiles').select('*').order('nama');staff={};(data||[]).forEach(s=>staff[s.id]=s)}
 async function load(){
   const{data,error}=await sb.from('jobs').select('*').neq('status','dibatalkan').order('deadline',{ascending:true,nullsFirst:false});
   if(error)return toast(error);jobs=data;render();
 }
 function go(v){view=v;render()}
-function filt(){const q=($('q').value||'').toLowerCase();return q?jobs.filter(j=>(j.judul+' '+nm(j.assignee_id)).toLowerCase().includes(q)):jobs}
+function filt(){const q=($('q').value||'').toLowerCase();return jobs.filter(j=>(!q||(j.judul+' '+nm(j.assignee_id)).toLowerCase().includes(q))&&(!F.st||j.status===F.st)&&(!F.as||(F.as==='_none'?!j.assignee_id:j.assignee_id===F.as))&&(!F.jn||j.jenis===F.jn)&&(!F.pr||j.prioritas===F.pr))}
 
 function render(){
   document.querySelectorAll('.nav[data-v]').forEach(n=>n.classList.toggle('on',n.dataset.v===view));
-  $('view').innerHTML=view==='dash'?dash():view==='board'?board():view==='team'?team():cal();
+  $('view').innerHTML=view==='dash'?dash():view==='board'?fbar()+board():view==='team'?team():view==='stat'?stat():fbar()+cal();
   right();
 }
 function row(j){const[l,c]=ST[j.status];return `<tr class="rw" onclick="openJob('${j.id}')"><td><b>${esc(j.judul)}</b></td><td>${j.jenis.replace('_',' ')}</td><td>${esc(nm(j.assignee_id))}</td><td><span class="pill" style="color:${c}"><span class="dot" style="background:${c}"></span>${l}</span></td><td class="${late(j)?'late':''}">${fmt(j.deadline)}</td></tr>`}
@@ -166,22 +174,16 @@ function dash(){
   <p>${act.length} pekerjaan sedang berjalan, ${mine.length} ditugaskan kepadamu${tl.length?`, dan ${tl.length} sudah lewat deadline`:''}.</p>
   <button onclick="go('board')">Buka papan kerja</button></div>
   <h3 class="sec">Status pekerjaan</h3><div class="stats">${Object.entries(ST).map(([k,[l,c]])=>`<button class="stat" onclick="go('board')"><span><span class="dot" style="background:${c}"></span>${l}</span><b>${jobs.filter(j=>j.status===k).length}</b></button>`).join('')}</div>
-  <h3 class="sec">Pekerjaan berjalan</h3><div class="tbl">${L.length?`<table><tr><th>Judul<th>Jenis<th>Penanggung jawab<th>Status<th>Deadline</tr>${L.map(row).join('')}</table>`:'<div class="empty">Belum ada pekerjaan. Buat request pertama lewat tombol di kanan atas.</div>'}</div>`;
+  <h3 class="sec">Pekerjaan berjalan</h3>${fbar()}<div class="tbl">${L.length?`<table><tr><th>Judul<th>Jenis<th>Penanggung jawab<th>Status<th>Deadline</tr>${L.map(row).join('')}</table>`:'<div class="empty">Belum ada pekerjaan. Buat request pertama lewat tombol di kanan atas.</div>'}</div>`;
 }
 function board(){
   return `<div id="board">${Object.entries(ST).map(([k,[l]])=>{
     let L=filt().filter(j=>j.status===k);
     if(k==='selesai')L=L.sort((a,b)=>new Date(b.selesai_at)-new Date(a.selesai_at)).slice(0,15);
-    return `<div class="col"><h4>${l} (${L.length})</h4>${L.map(card).join('')}</div>`}).join('')}</div>`;
+    return `<div class="col" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')" ondrop="dropC(event,'${k}',this)"><h4>${l} (${L.length})</h4>${L.map(card).join('')}</div>`}).join('')}</div>`;
 }
-function card(j){return `<div class="card" onclick="openJob('${j.id}')"><span class="tag ${j.prioritas}">${j.prioritas}</span><span class="tag">${j.jenis.replace('_',' ')}</span>
+function card(j){return `<div class="card" draggable="true" ondragstart="dragS(event,'${j.id}')" onclick="openJob('${j.id}')"><span class="tag ${j.prioritas}">${j.prioritas}</span><span class="tag">${j.jenis.replace('_',' ')}</span>
   <div style="margin-top:6px"><b>${esc(j.judul)}</b></div><small>${esc(nm(j.assignee_id))}</small><small class="${late(j)?'late':''}">⏰ ${fmt(j.deadline)}</small></div>`}
-function team(){
-  const q=($('q').value||'').toLowerCase(),O=['admin','manager','editor','kreatif'];
-  const L=Object.values(staff).filter(s=>!q||(s.nama+' '+(s.divisi||'')).toLowerCase().includes(q)).sort((a,b)=>O.indexOf(a.staff_role)-O.indexOf(b.staff_role)||a.nama.localeCompare(b.nama));
-  return `<h3 class="sec"><span>Tim (${L.length})</span></h3><div class="tg">${L.map(s=>{const n=jobs.filter(j=>j.assignee_id===s.id&&['dikerjakan','revisi'].includes(j.status)).length;
-  return `<div class="tc ${s.aktif?'':'off'}"><div class="av">${esc(s.nama[0]||'?')}</div><div><b>${esc(s.nama)}</b><small>${esc(s.staff_role)}${s.divisi?' | '+esc(s.divisi.replace('_',' ')):''}</small><small>${s.aktif?(s.staff_role==='editor'?n+' pekerjaan aktif':'Aktif'):'Nonaktif'}</small></div></div>`}).join('')||'<div class="empty">Belum ada staff.</div>'}</div>`;
-}
 function cal(){
   const y=calM.getFullYear(),m=calM.getMonth(),first=(new Date(y,m,1).getDay()+6)%7,n=new Date(y,m+1,0).getDate(),today=new Date();
   let cells=['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(d=>`<div class="h">${d}</div>`).join('')+'<div></div>'.repeat(first);
@@ -196,13 +198,14 @@ function right(){
   const up=jobs.filter(j=>j.deadline&&j.status!=='selesai').slice(0,5);
   const eds=Object.values(staff).filter(s=>s.staff_role==='editor'&&s.aktif),act=jobs.filter(j=>['dikerjakan','revisi'].includes(j.status));
   const mx=Math.max(3,...eds.map(e=>act.filter(j=>j.assignee_id===e.id).length));
-  $('rp').innerHTML=`<div class="me"><div><b>${esc(me.nama)}</b><small>${esc(me.staff_role)}</small></div><div class="av">${esc(me.nama[0]||'?')}</div></div>
+  $('rp').innerHTML=`<div class="me" style="cursor:pointer" title="Profil saya" onclick="profUI()"><div><b>${esc(me.nama)}</b><small>${esc(me.staff_role)}</small></div><div class="av">${esc(me.nama[0]||'?')}</div></div>
   <b>Minggu ini</b><div class="week">${wk}</div>
   <b style="margin-top:4px">Deadline terdekat</b><div class="panel">${up.map(j=>`<div class="item" onclick="openJob('${j.id}')"><span class="dot" style="background:${ST[j.status][1]}"></span><div><b>${esc(j.judul)}</b><small class="${late(j)?'late':''}">${fmt(j.deadline)}</small></div></div>`).join('')||'<div class="empty">Tidak ada deadline.</div>'}</div>
   ${lead()?`<b style="margin-top:14px">Beban kerja editor</b><div class="panel">${eds.map(e=>{const c=act.filter(j=>j.assignee_id===e.id).length;return `<div class="item" style="cursor:default"><div><b>${esc(e.nama)}</b><small>${c} aktif</small><div class="bar"><i style="width:${c/mx*100}%"></i></div></div></div>`}).join('')||'<div class="empty">Belum ada editor aktif.</div>'}</div>`:''}`;
 }
 
-async function act(fn,args){if(await rpc(fn,args)){$('dj').close();load()}}
+const EV={assign_job:'ditugaskan',kirim_hasil:'hasil_dikirim',batalkan_job:'dibatalkan'};
+async function act(fn,args){if(await rpc(fn,args)){const ev=fn==='review_job'?(args.p_keputusan==='setuju'?'disetujui':'revisi'):EV[fn];if(ev)notif(ev,args.p_job);$('dj').close();load()}}
 async function rpc(fn,args){const{error}=await sb.rpc(fn,args);if(error){toast(error);return false}return true}
 async function openJob(id){
   cur=jobs.find(j=>j.id==id);const j=cur,mine=j.assignee_id===me.id;
@@ -223,6 +226,7 @@ async function openJob(id){
     a+=`<input id="rc" placeholder="Catatan (wajib jika minta revisi)"><div class="row"><button class="p" onclick="act('review_job',{p_job:'${id}',p_keputusan:'setuju',p_catatan:$('rc').value||null})">Setujui</button><button onclick="act('review_job',{p_job:'${id}',p_keputusan:'revisi',p_catatan:$('rc').value})">Minta revisi</button></div>`;
   if(j.status!=='selesai'&&(lead()||(j.requester_id===me.id&&j.status==='antrean')))
     a+=`<button class="d" onclick="if(confirm('Batalkan job ini?'))act('batalkan_job',{p_job:'${id}'})">Batalkan job</button>`;
+  if(j.status!=='selesai'&&(lead()||(j.requester_id===me.id&&j.status==='antrean')))a+=`<button onclick="editUI()">Edit job</button>`;
   const vers=(s.data||[]).map(v=>{const x=rev[v.id];return `<div class="hist"><b>v${v.versi}</b> <a href="${url(v.link_hasil)}" target="_blank" rel="noopener">buka hasil</a> ${esc(v.catatan||'')}${x?`<br><small>${x.keputusan==='setuju'?'✅ Disetujui':'🔁 Revisi'}: ${esc(x.catatan||'')} (${esc(staff[x.reviewer_id]?.nama)})</small>`:''}</div>`}).join('');
   const cms=(c.data||[]).map(x=>`<div class="hist"><small>${esc(staff[x.user_id]?.nama)}, ${fmt(x.created_at)}</small><br>${esc(x.isi)}</div>`).join('');
   $('dj').innerHTML=`<h3>${esc(j.judul)}</h3><p>${esc(j.deskripsi||'')}</p>
@@ -242,37 +246,108 @@ async function komen(){
 }
 async function kirimReq(){
   const j=$('rj').value.trim();if(!j)return toast('Judul wajib diisi');
-  const{error}=await sb.from('jobs').insert({judul:j,jenis:$('rt').value,deskripsi:$('rd').value||null,
+  const{data:nj,error}=await sb.from('jobs').insert({judul:j,jenis:$('rt').value,deskripsi:$('rd').value||null,
     referensi_url:$('rf').value||null,format_output:$('ro').value||null,prioritas:$('rp2').value,
-    deadline:$('rl').value?new Date($('rl').value).toISOString():null,requester_id:me.id});
-  if(error)return toast(error);$('dr').close();load();
+    deadline:$('rl').value?new Date($('rl').value).toISOString():null,requester_id:me.id}).select('id').single();
+  if(error)return toast(error);if(nj)notif('job_baru',nj.id);$('dr').close();load();
 }
 
-const ROLES=['admin','manager','editor','kreatif'];
-async function staffUI(){
-  await loadStaff();
-  const rows=Object.values(staff).map(s=>`<tr><td>${esc(s.nama)}<br><small>${esc(s.divisi||'')}</small></td>
-  <td><select onchange="upd('${s.id}',{staff_role:this.value})">${ROLES.map(r=>`<option ${r===s.staff_role?'selected':''}>${r}</option>`).join('')}</select></td>
-  <td><label><input type="checkbox" style="width:auto" ${s.aktif?'checked':''} onchange="upd('${s.id}',{aktif:this.checked})"> aktif</label></td></tr>`).join('');
-  $('ds').innerHTML=`<h3>Kelola staff</h3><table style="width:100%">${rows}</table>
-  <h4 class="s">Undang staff baru (lewat email)</h4>
-  <input id="sn" placeholder="Nama"><input id="se" type="email" placeholder="Email">
-  <div class="row"><select id="sr">${ROLES.map(r=>`<option>${r}</option>`).join('')}</select>
-  <select id="sd"><option value="">- divisi -</option><option value="editor_foto">editor_foto</option><option value="editor_video">editor_video</option><option value="kreatif">kreatif</option></select></div>
-  <div class="row"><button onclick="$('ds').close()">Tutup</button><button class="p" onclick="tambah()">Undang</button></div>`;
-  if(!$('ds').open)$('ds').showModal();
+const ROLES=['admin','manager','editor','kreatif'],DIV=['editor_foto','editor_video','kreatif'],isA=()=>me.staff_role==='admin';
+const JENIS=[['edit_foto','Edit foto'],['edit_video','Edit video'],['thumbnail','Thumbnail'],['desain','Desain'],['lainnya','Lainnya']],PRI=['rendah','normal','tinggi','urgent'];
+let F={st:'',as:'',jn:'',pr:''},dragId=null;
+const resetF=()=>{F={st:'',as:'',jn:'',pr:''};render()};
+const opt=(a,c,all)=>(all?`<option value="">${all}</option>`:'')+a.map(([v,l])=>`<option value="${esc(v)}" ${v===c?'selected':''}>${esc(l)}</option>`).join('');
+function fbar(){return `<div class="fb"><select onchange="F.st=this.value;render()">${opt(Object.entries(ST).map(([k,v])=>[k,v[0]]),F.st,'Semua status')}</select>
+<select onchange="F.as=this.value;render()">${opt([['_none','Belum ditugaskan'],...Object.values(staff).filter(s=>s.staff_role==='editor').map(s=>[s.id,s.nama])],F.as,'Semua penanggung jawab')}</select>
+<select onchange="F.jn=this.value;render()">${opt(JENIS,F.jn,'Semua jenis')}</select>
+<select onchange="F.pr=this.value;render()">${opt(PRI.map(p=>[p,p]),F.pr,'Semua prioritas')}</select>
+${Object.values(F).some(Boolean)?'<button class="mini" onclick="resetF()">Reset</button>':''}</div>`}
+
+/* notifikasi email (dikirim server lewat Gmail) */
+const notif=(event,job_id)=>{sb.functions.invoke('notif-staff',{body:{event,job_id}}).catch(()=>{})};
+async function decide(j,k,c){if(await rpc('review_job',{p_job:j.id,p_keputusan:k,p_catatan:c})){notif(k==='setuju'?'disetujui':'revisi',j.id);load()}}
+
+/* drag kartu: hanya perpindahan yang sah menurut alur review */
+const dragS=(e,id)=>{dragId=id;e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',String(id))};
+async function dropC(e,to,el){
+  e.preventDefault();el.classList.remove('over');
+  const j=jobs.find(x=>x.id==dragId);dragId=null;if(!j||j.status===to)return;
+  if(j.status==='antrean'&&to==='dikerjakan'&&me.staff_role==='editor'&&(!j.assignee_id||j.assignee_id===me.id)){if(await rpc('mulai_job',{p_job:j.id}))load();return}
+  if(j.status==='review'&&lead()&&to==='selesai'){if(confirm('Setujui "'+j.judul+'"?'))await decide(j,'setuju',null);return}
+  if(j.status==='review'&&lead()&&to==='revisi'){const c=(prompt('Catatan revisi (wajib):')||'').trim();if(c)await decide(j,'revisi',c);return}
+  toast('Perpindahan ini tidak bisa lewat drag. Buka job-nya dan pakai tombol aksi.');
 }
-async function upd(id,p){
-  if(id===me.id&&(p.aktif===false||(p.staff_role&&p.staff_role!=='admin')))toast('Akunmu sendiri tidak bisa diubah di sini');
-  else{const{error}=await sb.from('staff_profiles').update(p).eq('id',id);if(error)toast(error)}
-  staffUI();
+
+/* edit job */
+const loc=d=>{if(!d)return'';const x=new Date(d);x.setMinutes(x.getMinutes()-x.getTimezoneOffset());return x.toISOString().slice(0,16)};
+function editUI(){const j=cur;$('de').innerHTML=`<h3>Edit job</h3><input id="ej" value="${esc(j.judul)}"><select id="et">${opt(JENIS,j.jenis)}</select>
+<textarea id="ed" rows="3" placeholder="Deskripsi">${esc(j.deskripsi||'')}</textarea><input id="ef" placeholder="Referensi (link)" value="${esc(j.referensi_url||'')}"><input id="eo" placeholder="Format output" value="${esc(j.format_output||'')}">
+<div class="row"><select id="ep">${opt(PRI.map(p=>[p,p]),j.prioritas)}</select><input id="el" type="datetime-local" value="${loc(j.deadline)}"></div>
+<div class="row"><button onclick="$('de').close()">Batal</button><button class="p" onclick="simpanEdit()">Simpan</button></div>`;$('de').showModal()}
+async function simpanEdit(){const id=cur.id;
+  if(!await rpc('edit_job',{p_job:id,p_judul:$('ej').value,p_jenis:$('et').value,p_deskripsi:$('ed').value,p_referensi:$('ef').value,p_format:$('eo').value,p_prioritas:$('ep').value,p_deadline:$('el').value?new Date($('el').value).toISOString():null}))return;
+  notif('diedit',id);$('de').close();await load();openJob(id)}
+
+/* statistik editor */
+function stat(){
+  const rows=Object.values(staff).filter(s=>s.staff_role==='editor').map(e=>{
+    const mine=jobs.filter(j=>j.assignee_id===e.id),done=mine.filter(j=>j.status==='selesai'&&j.selesai_at),
+    act=mine.filter(j=>['dikerjakan','revisi'].includes(j.status)).length,
+    d30=done.filter(j=>new Date(j.selesai_at)>Date.now()-30*864e5).length,
+    tm=done.filter(j=>j.created_at),avg=tm.length?tm.reduce((a,j)=>a+(new Date(j.selesai_at)-new Date(j.created_at)),0)/tm.length/864e5:null,
+    dl=done.filter(j=>j.deadline),ot=dl.length?Math.round(dl.filter(j=>new Date(j.selesai_at)<=new Date(j.deadline)).length/dl.length*100):null;
+    return `<tr><td><b>${esc(e.nama)}</b>${e.aktif?'':' <small>(nonaktif)</small>'}</td><td>${act}</td><td>${d30}</td><td>${done.length}</td><td>${avg==null?'-':avg.toFixed(1)+' hari'}</td><td>${ot==null?'-':ot+'%'}</td></tr>`}).join('');
+  return `<h3 class="sec"><span>Statistik editor</span></h3><div class="tbl"><table><tr><th>Editor<th>Aktif<th>Selesai 30 hari<th>Total selesai<th>Rata-rata pengerjaan<th>Tepat waktu</tr>${rows||'<tr><td colspan=6 class="empty">Belum ada editor.'}</table></div>
+  <small style="color:var(--m)">Rata-rata pengerjaan dihitung dari request dibuat sampai disetujui. Tepat waktu = disetujui sebelum deadline.</small>`}
+
+/* tim: nonaktif, hapus, reset password, ubah role (admin) */
+function team(){
+  const q=($('q').value||'').toLowerCase(),O=ROLES;
+  const L=Object.values(staff).filter(s=>!q||(s.nama+' '+(s.divisi||'')).toLowerCase().includes(q)).sort((a,b)=>O.indexOf(a.staff_role)-O.indexOf(b.staff_role)||a.nama.localeCompare(b.nama));
+  return `<h3 class="sec"><span>Tim (${L.length})</span></h3><div class="tg">${L.map(s=>{const n=jobs.filter(j=>j.assignee_id===s.id&&['dikerjakan','revisi'].includes(j.status)).length;
+  const ad=isA()&&s.id!==me.id?`<div class="acts"><select onchange="upd('${s.id}',{staff_role:this.value})">${opt(ROLES.map(r=>[r,r]),s.staff_role)}</select>
+  <button class="mini" onclick="tglAktif('${s.id}',${!s.aktif})">${s.aktif?'Nonaktifkan':'Aktifkan'}</button><button class="mini" onclick="resetPw('${s.id}')">Reset password</button><button class="mini d" onclick="hapusStaff('${s.id}')">Hapus</button></div>`:'';
+  return `<div class="tc ${s.aktif?'':'off'}"><div class="av">${esc(s.nama[0]||'?')}</div><div><b>${esc(s.nama)}</b><small>${esc(s.staff_role)}${s.divisi?' | '+esc(s.divisi.replace('_',' ')):''}${s.username?' | @'+esc(s.username):''}</small><small>${s.aktif?(s.staff_role==='editor'?n+' pekerjaan aktif':'Aktif'):'Nonaktif'}${s.must_change_password?' | belum ganti password':''}</small>${ad}</div></div>`}).join('')||'<div class="empty">Belum ada staff.</div>'}</div>`;
 }
+async function ks(body){
+  const{data,error}=await sb.functions.invoke('kelola-staff',{body});
+  if(error){let m=error.message;if(error.name==='FunctionsFetchError')m='Function kelola-staff tidak bisa dihubungi. Pastikan sudah di-deploy dengan nama persis kelola-staff.';else{try{m=(await error.context.json()).error||m}catch{}}toast(m);return null}
+  return data}
+async function upd(id,p){const{error}=await sb.from('staff_profiles').update(p).eq('id',id);if(error)toast(error);await loadStaff();render()}
+async function tglAktif(id,v){if(!v&&!confirm('Nonaktifkan akun '+staff[id].nama+'? Ia tidak bisa masuk, riwayat kerjanya tetap ada.'))return;if(await ks({action:'status',id,aktif:v})){await loadStaff();render()}}
+async function resetPw(id){const p=prompt('Password sementara untuk '+staff[id].nama+' (min. 8 karakter). Ia wajib menggantinya saat login.',genPw());if(!p)return;if(await ks({action:'reset_password',id,password:p})){alert('Password diganti. Sampaikan langsung ke '+staff[id].nama+':\n'+p);await loadStaff();render()}}
+async function hapusStaff(id){if(!confirm('HAPUS permanen akun '+staff[id].nama+'? Tidak bisa dibatalkan. Kalau ia punya riwayat kerja, nonaktifkan saja.'))return;if(await ks({action:'hapus',id})){await loadStaff();render()}}
+
+/* profil saya */
+function profUI(){$('dp').innerHTML=`<h3>Profil saya</h3><small>${esc(me.nama)} | ${esc(me.staff_role)}${me.username?' | @'+esc(me.username):''}</small>
+<h4 class="s">Email untuk notifikasi dan lupa password</h4><input id="pe" type="email" placeholder="email@contoh.com" value="${esc(me.email_kontak||'')}"><button onclick="simpanEmail()">Simpan email</button>
+<h4 class="s">Ganti password</h4><input id="p1" type="password" placeholder="Password baru (min. 8 karakter)" autocomplete="new-password"><input id="p2" type="password" placeholder="Ulangi password baru" autocomplete="new-password">
+<button class="p" onclick="gantiPw()">Ganti password</button><div class="row" style="margin-top:14px"><button onclick="$('dp').close()">Tutup</button></div>`;$('dp').showModal()}
+async function simpanEmail(){if(!await rpc('ubah_email_kontak',{p_email:$('pe').value.trim()}))return;await loadStaff();me=staff[me.id];alert('Email disimpan.')}
+async function gantiPw(){const a=$('p1').value;if(a.length<8)return toast('Password minimal 8 karakter');if(a!==$('p2').value)return toast('Konfirmasi password tidak sama');
+  const{error}=await sb.auth.updateUser({password:a});if(error)return toast(error);$('p1').value=$('p2').value='';alert('Password berhasil diganti.')}
+async function lupaPw(){
+  const u=(prompt('Masukkan username kamu:')||'').trim().toLowerCase().replace(LOGIN_DOMAIN,'');if(!u)return;
+  const{error}=await sb.functions.invoke('lupa-password',{body:{username:u}});
+  if(error)return toast('Gagal memproses. Coba lagi atau hubungi admin.');
+  alert('Jika username terdaftar dan punya email, tautan reset sudah dikirim. Cek inbox dan folder spam. Kalau tidak ada email, minta admin mereset passwordmu.')}
+
+/* kelola staf: khusus menambah staf baru */
+const genPw=()=>{const c='abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';let p='';crypto.getRandomValues(new Uint32Array(10)).forEach(n=>p+=c[n%c.length]);return p};
+function staffUI(){
+  $('ds').innerHTML=`<h3>Kelola staff</h3><small>Tambahkan staf baru. Ia wajib mengganti password saat login pertama.</small>
+  <input id="sn" placeholder="Nama lengkap"><input id="su" placeholder="Username (huruf kecil/angka, mis. budi.santoso)" autocapitalize="none" autocomplete="off">
+  <div class="row"><input id="spw" type="text" placeholder="Password awal (min. 8)" autocomplete="off"><button type="button" style="flex:0;white-space:nowrap;margin:3px 0 9px" onclick="$('spw').value=genPw()">Buat acak</button></div>
+  <input id="se" type="email" placeholder="Email staf (opsional, untuk notifikasi dan lupa password)">
+  <div class="row"><select id="sr">${opt(ROLES.map(r=>[r,r]),'editor')}</select><select id="sd">${opt(DIV.map(r=>[r,r]),'','- divisi -')}</select></div>
+  <div class="row"><button onclick="$('ds').close()">Tutup</button><button class="p" onclick="tambah()">Tambah staf</button></div>`;
+  if(!$('ds').open)$('ds').showModal()}
 async function tambah(){
-  const{data,error}=await sb.functions.invoke('buat-staff',{body:{nama:$('sn').value.trim(),email:$('se').value.trim(),
-    staff_role:$('sr').value,divisi:$('sd').value,redirectTo:location.origin+location.pathname}});
-  if(error){if(error.name==='FunctionsFetchError')return toast('Function buat-staff tidak bisa dihubungi. Pastikan sudah di-deploy dengan nama persis buat-staff, lalu cek tab Logs-nya di Supabase.');let m=error.message;try{m=(await error.context.json()).error||m}catch{}return toast(m)}
-  toast('Undangan terkirim ke '+$('se').value);staffUI();
-}
+  const pw=$('spw').value;
+  const d=await ks({action:'buat',nama:$('sn').value.trim(),username:$('su').value.trim().toLowerCase(),password:pw,email:$('se').value.trim(),staff_role:$('sr').value,divisi:$('sd').value});
+  if(!d)return;await loadStaff();render();
+  alert('Akun dibuat.\n\nUsername: '+d.username+'\nPassword awal: '+pw+'\n\nSampaikan langsung ke staf. Ia wajib mengganti password saat login pertama.'+(d.email_terkirim?'\nEmail sambutan (tanpa password) sudah dikirim.':''));
+  staffUI()}
 const closeDD=()=>document.querySelectorAll('.ddm').forEach(m=>{m.classList.add('hide');m.previousElementSibling.setAttribute('aria-expanded','false')});
 function enh(sel){
   if(sel.dataset.e)return;sel.dataset.e=1;sel.style.display='none';
