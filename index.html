@@ -123,7 +123,10 @@ const late=j=>j.deadline&&j.status!=='selesai'&&new Date(j.deadline)<new Date();
 const nm=id=>staff[id]?.nama||'Belum ditugaskan';
 const toast=e=>alert(e.message||e);
 const show=id=>['auth','pw','app','nope'].forEach(x=>$(x).classList.toggle('hide',x!==id));
-const out=()=>sb.auth.signOut().then(()=>location.reload());
+const out=async()=>{
+  try{await Promise.race([sb.auth.signOut({scope:'local'}),new Promise(r=>setTimeout(r,1500))])}catch(e){}
+  try{Object.keys(localStorage).filter(k=>k.startsWith('sb-')).forEach(k=>localStorage.removeItem(k))}catch(e){}
+  location.replace(location.pathname)};
 const sameDay=(a,b)=>new Date(a).toDateString()===b.toDateString();
 
 async function init(){
