@@ -639,8 +639,10 @@ async function hapusStaff(id){if(!confirm('HAPUS permanen akun '+staff[id].nama+
 /* profil saya */
 function profUI(){$('dp').innerHTML=`<h3>Profil saya</h3><small>${esc(me.nama)} | ${esc(me.staff_role)}${me.username?' | @'+esc(me.username):''}${me.staff_role==='manager'?' | tim '+((me.tim||[]).map(timLbl).join(', ')||'belum diatur'):''}${me.divisi?' | '+esc(DVL[me.divisi]||me.divisi):''}</small>
 <h4 class="s">Email untuk notifikasi dan lupa password</h4><input id="pe" type="email" placeholder="email@contoh.com" value="${esc(me.email_kontak||'')}"><button onclick="simpanEmail()">Simpan email</button>
+<h4 class="s">Discord ID untuk notifikasi (@mention)</h4><input id="pd" inputmode="numeric" placeholder="mis. 123456789012345678" value="${esc(me.discord_id||'')}"><button onclick="simpanDiscord()">Simpan Discord ID</button><small>Discord: Settings &gt; Advanced &gt; Developer Mode, lalu klik kanan namamu &gt; Copy User ID.</small>
 <h4 class="s">Ganti password</h4><input id="p1" type="password" placeholder="Password baru (min. 8 karakter)" autocomplete="new-password"><input id="p2" type="password" placeholder="Ulangi password baru" autocomplete="new-password">
 <button class="p" onclick="gantiPw()">Ganti password</button><div class="row" style="margin-top:14px"><button onclick="$('dp').close()">Tutup</button></div>`;$('dp').showModal()}
+async function simpanDiscord(){if(!await rpc('ubah_discord_id',{p_id:$('pd').value.trim()}))return;await loadStaff();me=staff[me.id];alert('Discord ID disimpan.')}
 async function simpanEmail(){if(!await rpc('ubah_email_kontak',{p_email:$('pe').value.trim()}))return;await loadStaff();me=staff[me.id];alert('Email disimpan.')}
 async function gantiPw(){const a=$('p1').value;if(a.length<8)return toast('Password minimal 8 karakter');if(a!==$('p2').value)return toast('Konfirmasi password tidak sama');
   const{error}=await sb.auth.updateUser({password:a});if(error)return toast(error);$('p1').value=$('p2').value='';alert('Password berhasil diganti.')}
