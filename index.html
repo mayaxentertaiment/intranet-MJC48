@@ -46,6 +46,7 @@ h3.sec{display:flex;justify-content:space-between;align-items:center;margin:22px
 .pill{font-size:12px;font-weight:600}
 .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.cal .h{color:var(--m);font-size:12px;text-align:center;padding:4px}
 .day{background:#fff;border-radius:10px;min-height:92px;padding:6px;font-size:12px;overflow:hidden}.day.td{outline:2px solid var(--p)}.day.o{opacity:.35}
+.ev.ag{background:#0ea5e9!important}.ev.bd2{background:#ec4899!important}.agd{background:#fff;border-radius:12px;padding:10px 14px;margin-bottom:8px}.agd h4{margin:0 0 4px;font-size:13px}.agd p{margin:3px 0;font-size:13px}.agd small{color:var(--m)}
 .ev{display:block;width:100%;text-align:left;padding:2px 6px;margin-top:3px;border:0;border-radius:6px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff}
 .right{padding:24px 22px;display:flex;flex-direction:column;gap:6px}
 .me{display:flex;align-items:center;gap:10px;justify-content:flex-end;margin-bottom:14px;text-align:right}.me small{color:var(--m);display:block}
@@ -106,7 +107,7 @@ dialog{border:0;border-radius:20px;width:min(560px,94vw);max-height:90vh;padding
  <aside class="right" id="rp"></aside>
 </div>
 
-<dialog id="dj"></dialog><dialog id="ds"></dialog><dialog id="de"></dialog><dialog id="dp"></dialog><dialog id="da"></dialog><dialog id="dx"></dialog><dialog id="dm"></dialog>
+<dialog id="dj"></dialog><dialog id="ds"></dialog><dialog id="de"></dialog><dialog id="dp"></dialog><dialog id="da"></dialog><dialog id="dx"></dialog><dialog id="dm"></dialog><dialog id="dg"></dialog>
 <dialog id="dr"><h3>Request baru</h3>
 <input id="rj" placeholder="Judul">
 <select id="rt"><option value="edit_foto">Edit foto</option><option value="edit_video">Edit video</option><option value="thumbnail">Thumbnail</option><option value="desain">Desain</option><option value="lainnya">Lainnya</option></select>
@@ -124,7 +125,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const url=u=>/^https?:\/\//i.test(u||'')?esc(u):'#';
 const ST={antrean:['Antrean','#8a8fb0'],dikerjakan:['Dikerjakan','#2f14f5'],review:['Review','#f59e0b'],revisi:['Revisi','#ef4444'],selesai:['Selesai','#22c9a6']};
 const needPw=/type=(invite|recovery)/.test(location.hash);
-let me=null,staff={},jobs=[],pend=[],appr=[],dtasks=[],curDiv='',cur=null,sub=false,view='dash',calM=new Date();
+let me=null,staff={},jobs=[],pend=[],appr=[],dtasks=[],sched=[],memb=[],calF='all',curDiv='',cur=null,sub=false,view='dash',calM=new Date();
 const lead=()=>['admin','manager'].includes(me.staff_role);
 const fmt=d=>d?new Date(d).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'}):'-';
 const late=j=>j.deadline&&j.status!=='selesai'&&new Date(j.deadline)<new Date();
@@ -168,11 +169,14 @@ async function setPw(){
   await sb.rpc('tandai_password_diganti');history.replaceState(null,'',location.pathname);location.reload()}
 async function loadStaff(){const{data}=await sb.from('staff_profiles').select('*').order('nama');staff={};(data||[]).forEach(s=>staff[s.id]=s)}
 async function load(){
-  const[a,b,c]=await Promise.all([
+  const[a,b,c,d_,e_]=await Promise.all([
     sb.from('jobs').select('*').neq('status','dibatalkan').order('deadline',{ascending:true,nullsFirst:false}),
     sb.from('job_approvals').select('*').order('created_at',{ascending:false}).limit(300),
-    sb.from('div_tasks').select('*').order('created_at',{ascending:false}).limit(500)]);
+    sb.from('div_tasks').select('*').order('created_at',{ascending:false}).limit(500),
+    lead()?sb.from('schedule').select('*'):Promise.resolve({data:[]}),
+    lead()?sb.from('members').select('id,name,nick,team,dob'):Promise.resolve({data:[]})]);
   if(a.error)return toast(a.error);
+  sched=d_.error?[]:(d_.data||[]);memb=e_.error?[]:(e_.data||[]);
   const all=a.data||[];jobs=all.filter(j=>!j.pending_approval);pend=all.filter(j=>j.pending_approval);
   appr=b.error?[]:(b.data||[]);dtasks=c.error?[]:(c.data||[]);render();
 }
@@ -192,7 +196,7 @@ function dash(){
   const L=filt().filter(j=>j.status!=='selesai').slice(0,8);
   return `<div class="hero"><h2>Selamat ${g}, ${esc(me.nama.split(' ')[0])}</h2>
   <p>${act.length} pekerjaan sedang berjalan, ${mine.length} ditugaskan kepadamu${tl.length?`, dan ${tl.length} sudah lewat deadline`:''}.</p>
-  <button onclick="go('board')">Buka papan kerja</button>${apprPending()?`<button onclick="go('appr')" style="margin-left:8px">${isA()?apprPending()+' pengajuan menunggu':'Pengajuanku ('+apprPending()+')'}</button>`:''}</div>
+  ${agToday()}<button onclick="go('board')">Buka papan kerja</button>${apprPending()?`<button onclick="go('appr')" style="margin-left:8px">${isA()?apprPending()+' pengajuan menunggu':'Pengajuanku ('+apprPending()+')'}</button>`:''}</div>
   <h3 class="sec">Status pekerjaan</h3><div class="stats">${Object.entries(ST).map(([k,[l,c]])=>`<button class="stat" onclick="go('board')"><span><span class="dot" style="background:${c}"></span>${l}</span><b>${jobs.filter(j=>j.status===k).length}</b></button>`).join('')}</div>
   <h3 class="sec">Pekerjaan berjalan</h3>${fbar()}<div class="tbl">${L.length?`<table><tr><th>Judul<th>Jenis<th>Penanggung jawab<th>Status<th>Deadline</tr>${L.map(row).join('')}</table>`:'<div class="empty">Belum ada pekerjaan. Buat request pertama lewat tombol di kanan atas.</div>'}</div>`;
 }
@@ -204,12 +208,45 @@ function board(src){const base=src||filt();
 }
 function card(j){return `<div class="card" draggable="true" ondragstart="dragS(event,'${j.id}')" onclick="openJob('${j.id}')"><span class="tag ${j.prioritas}">${j.prioritas}</span><span class="tag">${j.jenis.replace('_',' ')}</span>
   <div style="margin-top:6px"><b>${esc(j.judul)}</b></div><small>${esc(nm(j.assignee_id))}</small><small class="${late(j)?'late':''}">⏰ ${fmt(j.deadline)}</small></div>`}
+/* ===== agenda & kalender (khusus admin dan manager; data dari tabel jadwal admin panel) ===== */
+const TKEY=['miii','jii','cii','trainee'],TNAME={miii:'Team MIII',jii:'Team JII',cii:'Team CII',trainee:'Trainee'};
+const tkOf=t=>{t=String(t||'').toLowerCase();return TKEY.find(k=>t.includes(k))||'all'};
+const myAgTims=()=>isA()?TKEY:(me.tim||[]);
+const agKey=x=>{const m=x.member!=null&&x.member!==''&&memb.find(y=>String(y.id)===String(x.member));return m?m.team:tkOf(x.team)};
+const ymd2=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+function agendaOn(ds){
+  if(!lead())return[];const t=myAgTims(),r=[];
+  sched.filter(x=>x.date===ds&&(agKey(x)==='all'||t.includes(agKey(x)))).forEach(x=>{
+    const m=x.member!=null&&x.member!==''&&memb.find(y=>String(y.id)===String(x.member));
+    r.push({k:'j',time:x.time||'',text:x.title||'(tanpa judul)',sub:[x.time,x.venue,m?(m.nick||m.name):'',TNAME[agKey(x)]||''].filter(Boolean).join(' | ')})});
+  memb.filter(m=>m.dob&&String(m.dob).slice(5)===ds.slice(5)&&t.includes(m.team)).forEach(m=>r.push({k:'b',time:'',text:'Ulang tahun '+(m.nick||m.name),sub:TNAME[m.team]||''}));
+  return r.sort((a,b)=>a.time.localeCompare(b.time))}
+const dayLbl=ds=>new Date(ds+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+function agenda7(){
+  const n=new Date();let h='';
+  for(let i=0;i<7;i++){const d=new Date(n.getFullYear(),n.getMonth(),n.getDate()+i),ds=ymd2(d),it=agendaOn(ds);
+    if(it.length)h+=`<div class="agd"><h4>${i===0?'Hari ini | ':i===1?'Besok | ':''}${dayLbl(ds)}</h4>${it.map(x=>`<p><b>${esc(x.text)}</b><br><small>${esc(x.sub)}</small></p>`).join('')}</div>`}
+  return h||'<div class="empty">Tidak ada agenda 7 hari ke depan.</div>'}
+function agDay(ds){const it=agendaOn(ds);
+  $('dg').innerHTML=`<h3>${dayLbl(ds)}</h3>${it.map(x=>`<div class="agd"><p><b>${esc(x.text)}</b><br><small>${esc(x.sub)}</small></p></div>`).join('')||'<div class="empty">Tidak ada agenda.</div>'}<button onclick="$('dg').close()">Tutup</button>`;$('dg').showModal()}
+async function kirimRingkas(){
+  const{data,error}=await sb.functions.invoke('notify',{body:{op:'remind_me',data:{}}});
+  if(error)return toast('Gagal mengirim ringkasan: '+error.message);
+  alert((data&&(data.msg||data.error))||(data&&data.ok?'Ringkasan dikirim.':'Selesai.'))}
+const agToday=()=>{if(!lead())return'';const n=new Date(),a=agendaOn(ymd2(n)).filter(x=>x.k==='j').length,b=agendaOn(ymd2(new Date(n.getFullYear(),n.getMonth(),n.getDate()+1))).filter(x=>x.k==='j').length;
+  return a||b?`<p style="margin-top:6px">Agenda: ${a?a+' kegiatan hari ini':''}${a&&b?', ':''}${b?b+' besok':''}. <u style="cursor:pointer" onclick="go('cal')">Lihat kalender</u></p>`:''};
 function cal(){
   const y=calM.getFullYear(),m=calM.getMonth(),first=(new Date(y,m,1).getDay()+6)%7,n=new Date(y,m+1,0).getDate(),today=new Date();
   let cells=['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(d=>`<div class="h">${d}</div>`).join('')+'<div></div>'.repeat(first);
-  for(let d=1;d<=n;d++){const dt=new Date(y,m,d),ev=filt().filter(j=>j.deadline&&sameDay(j.deadline,dt));
-    cells+=`<div class="day ${sameDay(dt,today)?'td':''}"><b>${d}</b>${ev.slice(0,3).map(j=>`<button class="ev" style="background:${ST[j.status][1]}" onclick="openJob('${j.id}')">${esc(j.judul)}</button>`).join('')}${ev.length>3?`<small>+${ev.length-3} lagi</small>`:''}</div>`}
-  return `<h3 class="sec"><span>${calM.toLocaleDateString('id-ID',{month:'long',year:'numeric'})}</span><span class="row" style="flex:none"><button onclick="calM.setMonth(calM.getMonth()-1);render()">‹</button><button onclick="calM=new Date();render()">Hari ini</button><button onclick="calM.setMonth(calM.getMonth()+1);render()">›</button></span></h3><div class="cal">${cells}</div>`;
+  const L=filt();
+  for(let d=1;d<=n;d++){const dt=new Date(y,m,d),ds=ymd2(dt),
+      ev=calF==='agenda'?[]:L.filter(j=>j.deadline&&sameDay(j.deadline,dt)),
+      ag=calF==='job'?[]:agendaOn(ds),
+      chips=ag.map(x=>`<button class="ev ${x.k==='b'?'bd2':'ag'}" title="${esc(x.sub)}" onclick="agDay('${ds}')">${esc((x.time?x.time+' ':'')+x.text)}</button>`).concat(ev.map(j=>`<button class="ev" style="background:${ST[j.status][1]}" onclick="openJob('${j.id}')">${esc(j.judul)}</button>`));
+    cells+=`<div class="day ${sameDay(dt,today)?'td':''}"><b>${d}</b>${chips.slice(0,3).join('')}${chips.length>3?`<small style="cursor:pointer" onclick="${ag.length?`agDay('${ds}')`:''}">+${chips.length-3} lagi</small>`:''}</div>`}
+  const ctl=lead()?`<select style="width:auto;margin:0" onchange="calF=this.value;render()"><option value="all" ${calF==='all'?'selected':''}>Job dan agenda</option><option value="job" ${calF==='job'?'selected':''}>Hanya deadline job</option><option value="agenda" ${calF==='agenda'?'selected':''}>Hanya agenda</option></select>`:'';
+  const sum=lead()?`<h3 class="sec"><span>Agenda 7 hari ke depan${isA()?'':' ('+((me.tim||[]).map(timLbl).join(', ')||'tim belum diatur')+')'}</span><button class="mini" onclick="kirimRingkas()">${isA()?'Kirim ringkasan ke semua manager':'Kirim ringkasan ke emailku'}</button></h3>${agenda7()}`:'';
+  return sum+`<h3 class="sec"><span>${calM.toLocaleDateString('id-ID',{month:'long',year:'numeric'})}</span><span class="row" style="flex:none;align-items:center">${ctl}<button onclick="calM.setMonth(calM.getMonth()-1);render()">‹</button><button onclick="calM=new Date();render()">Hari ini</button><button onclick="calM.setMonth(calM.getMonth()+1);render()">›</button></span></h3><div class="cal">${cells}</div>`;
 }
 function right(){
   const t=new Date(),mon=new Date(t);mon.setDate(t.getDate()-((t.getDay()+6)%7));
@@ -539,7 +576,7 @@ async function tambah(){
   const pw=$('spw').value;
   const d=await ks({action:'buat',nama:$('sn').value.trim(),username:$('su').value.trim().toLowerCase(),password:pw,email:$('se').value.trim(),staff_role:$('sr').value,divisi:$('sd').value});
   if(!d)return;await loadStaff();render();
-  alert('Akun dibuat.\n\nUsername: '+d.username+'\nPassword awal: '+pw+'\n\nSampaikan langsung ke staf. Ia wajib mengganti password saat login pertama.'+(d.email_terkirim?'\nEmail sambutan (tanpa password) sudah dikirim.':''));
+  alert('Akun dibuat.\n\nUsername: '+d.username+'\nPassword awal: '+pw+'\n\nSampaikan langsung ke staf. Ia wajib mengganti password saat login pertama.'+(d.email_terkirim?'\nEmail sambutan berisi tautan buat password sudah dikirim.':($('se').value.trim()?'\n\nPERHATIAN: email sambutan GAGAL terkirim. Cek secret Gmail dan log function kelola-staff.':'')));
   staffUI()}
 const closeDD=()=>document.querySelectorAll('.ddm').forEach(m=>{m.classList.add('hide');m.previousElementSibling.setAttribute('aria-expanded','false')});
 function enh(sel){
