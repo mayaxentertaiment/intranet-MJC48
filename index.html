@@ -379,7 +379,7 @@ async function isiTplMgr(){
   ms.forEach(m=>((m.tim&&m.tim.length)?m.tim:[null]).forEach(tk=>{const T=tk?'Tim '+timLbl(tk):'timmu',r=x=>x.replaceAll('{t}',T);
     MGR_TPL.forEach(([j,f,p,w,d,a,l,o])=>{const jd=r(j);if(dtasks.some(t=>t.divisi==='manager'&&t.assignee_id===m.id&&t.judul===jd&&t.deskripsi))return;
       rows.push({divisi:'manager',judul:jd,assignee_id:m.id,tim:tk,deadline:w?sun.toISOString():null,frekuensi:f,prioritas:p,deskripsi:r(d),alasan:r(a),output:r(o),langkah:l.map(x=>({t:r(x),x:0}))})})}));
-  if(!rows.length)return toast('Semua job desk sudah ada');const{error}=await sb.from('div_tasks').insert(rows);if(error)return toast(error);load()}
+  if(!rows.length)return toast('Semua job desk sudah ada');const{data:ins,error}=await sb.from('div_tasks').insert(rows).select('id');if(error)return toast(error);if(ins&&ins.length)sb.functions.invoke('notif-staff',{body:{event:'jobdesk_baru',task_ids:ins.map(x=>x.id)}}).catch(()=>{});load()}
 /* job desk baru: dibuat admin, otomatis ke manager yang memegang tim terpilih */
 const JD_FRK=['Sekali ini','Harian (maks. 24 jam)','Mingguan (Senin)','Mingguan (Jumat)','Mingguan (Minggu malam)','Bulanan','Setiap show','Tiap latihan / show'];
 const jdMgrs=t=>Object.values(staff).filter(s=>s.aktif&&s.staff_role==='manager'&&(t==='_all'||(s.tim||[]).includes(t)));
@@ -411,8 +411,9 @@ async function simpanJD(){
       rows.push({divisi:'manager',judul:r(j),assignee_id:id,tim:tk,deadline:dl,frekuensi:f,prioritas:$('jr').value,
         deskripsi:d?r(d):null,alasan:$('ja').value.trim()?r($('ja').value.trim()):null,output:$('jo').value.trim()?r($('jo').value.trim()):null,
         langkah:L.map(x=>({t:r(x),x:0}))})})});
-  const{error}=await sb.from('div_tasks').insert(rows);if(error)return toast(error);
-  $('dm').close();await load();alert(rows.length+' job desk dibuat.')}
+  const{data:ins,error}=await sb.from('div_tasks').insert(rows).select('id');if(error)return toast(error);
+  if(ins&&ins.length)sb.functions.invoke('notif-staff',{body:{event:'jobdesk_baru',task_ids:ins.map(x=>x.id)}}).catch(()=>{});
+  $('dm').close();await load();alert(rows.length+' job desk dibuat. Manager yang punya email kontak akan diberi tahu lewat email.')}
 async function cekLangkah(id,i,v){const t=dtasks.find(x=>x.id===id);if(!t)return;const L=(t.langkah||[]).map((x,k)=>k===i?{...x,x:v?1:0}:x),all=L.length>0&&L.every(x=>x.x);
   const{error}=await sb.from('div_tasks').update({langkah:L,selesai:all,selesai_at:all?new Date().toISOString():null,selesai_oleh:all?me.id:null}).eq('id',id);if(error)toast(error);load()}
 const tkVis=t=>lead()||t.assignee_id===me.id||(!t.assignee_id&&me.divisi&&t.divisi===me.divisi);
