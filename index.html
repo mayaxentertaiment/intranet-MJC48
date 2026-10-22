@@ -247,7 +247,7 @@ async function openJob(id){
   if(j.status!=='selesai'&&isA())
     a+=`<button class="d" onclick="if(confirm('Batalkan job ini?'))act('batalkan_job',{p_job:'${id}'})">Batalkan job</button><button onclick="editUI()">Edit job</button>`;
   else if(j.status!=='selesai'&&(lead()||mine||j.requester_id===me.id))
-    a+=`<button onclick="ajukanUI()">Ajukan perubahan ke admin</button>`;
+    a+=`<button onclick="ajukanUI()">Ubah job / ajukan perubahan</button>`;
   const vers=(s.data||[]).map(v=>{const x=rev[v.id];return `<div class="hist"><b>v${v.versi}</b> <a href="${url(v.link_hasil)}" target="_blank" rel="noopener">buka hasil</a> ${esc(v.catatan||'')}${x?`<br><small>${x.keputusan==='setuju'?'✅ Disetujui':'🔁 Revisi'}: ${esc(x.catatan||'')} (${esc(staff[x.reviewer_id]?.nama)})</small>`:''}</div>`}).join('');
   const cms=(c.data||[]).map(x=>`<div class="hist"><small>${esc(staff[x.user_id]?.nama)}, ${fmt(x.created_at)}</small><br>${esc(x.isi)}</div>`).join('');
   $('dj').innerHTML=`<h3>${esc(j.judul)}</h3><p>${esc(j.deskripsi||'')}</p>
@@ -271,7 +271,7 @@ async function kirimReq(){
     p_referensi:$('rf').value||null,p_format:$('ro').value||null,p_prioritas:$('rp2').value,
     p_deadline:$('rl').value?new Date($('rl').value).toISOString():null});
   if(error)return toast(error);
-  if(data&&data.pending){notif('approval_diajukan',data.job_id,data.approval_id);alert('Request terkirim. Job masuk antrean setelah disetujui admin.')}
+  if(data&&data.pending){notif('approval_diajukan',data.job_id,data.approval_id);alert('Request terkirim dan masuk antrean.')}
   else if(data)notif('job_baru',data.job_id);
   $('dr').close();load();
 }
@@ -334,17 +334,17 @@ async function putus(id,ok){
 async function tarikAp(id){if(!confirm('Tarik pengajuan ini?'))return;const{error}=await sb.rpc('batalkan_pengajuan',{p_id:id});if(error)return toast(error);load()}
 
 function ajukanUI(){const j=cur;
-  $('da').innerHTML=`<h3>Ajukan perubahan</h3><small>Perubahan baru berlaku setelah disetujui admin.</small>
+  $('da').innerHTML=`<h3>Ajukan perubahan</h3><small>Perubahan kecil (deadline max +2 hari, edit detail, ganti PIC oleh manager, batal job yang masih antrean) langsung berlaku. Perubahan besar menunggu persetujuan admin.</small>
   <h4 class="s">Jenis pengajuan</h4><select id="aj" onchange="ajForm()">${opt([['perpanjang_deadline',APL.perpanjang_deadline],...(j.assignee_id?[['ganti_pic',APL.ganti_pic]]:[]),['edit',APL.edit],['batalkan',APL.batalkan]],'perpanjang_deadline')}</select>
   <div id="ajf"></div><textarea id="aja" rows="3" placeholder="Alasan pengajuan (wajib)"></textarea>
-  <div class="row"><button onclick="$('da').close()">Batal</button><button class="p" onclick="kirimAjuan()">Kirim pengajuan</button></div>`;
+  <div class="row"><button onclick="$('da').close()">Batal</button><button class="p" onclick="kirimAjuan()">Simpan perubahan</button></div>`;
   ajForm();$('da').showModal()}
 function ajForm(){const j=cur,t=$('aj').value;
   const eds=Object.values(staff).filter(x=>x.staff_role==='editor'&&x.aktif&&x.id!==j.assignee_id);
   $('ajf').innerHTML=t==='perpanjang_deadline'?`<h4 class="s">Deadline baru</h4><input id="ajd" type="datetime-local" value="${loc(j.deadline)}">`
    :t==='ganti_pic'?`<h4 class="s">Penanggung jawab baru</h4><select id="ajp">${eds.map(e=>`<option value="${e.id}">${esc(e.nama)}</option>`).join('')}</select>`
    :t==='edit'?`<h4 class="s">Detail baru</h4><input id="aje" value="${esc(j.judul)}"><select id="ajt">${opt(JENIS,j.jenis)}</select><textarea id="ajx" rows="3" placeholder="Deskripsi">${esc(j.deskripsi||'')}</textarea><input id="ajr" placeholder="Referensi (link)" value="${esc(j.referensi_url||'')}"><input id="ajo" placeholder="Format output" value="${esc(j.format_output||'')}"><div class="row"><select id="ajq">${opt(PRI.map(p=>[p,p]),j.prioritas)}</select><input id="ajl" type="datetime-local" value="${loc(j.deadline)}"></div>`
-   :`<p><small>Job ini akan dibatalkan setelah admin menyetujui.</small></p>`}
+   :`<p><small>Job yang masih antrean langsung dibatalkan. Job yang sudah berjalan perlu persetujuan admin.</small></p>`}
 async function kirimAjuan(){
   const j=cur,t=$('aj').value,alasan=($('aja').value||'').trim();let p={};
   if(!alasan)return toast('Alasan wajib diisi');
@@ -353,7 +353,7 @@ async function kirimAjuan(){
   else if(t==='edit'){if(!$('aje').value.trim())return toast('Judul wajib diisi');p={judul:$('aje').value,jenis:$('ajt').value,deskripsi:$('ajx').value,referensi:$('ajr').value,format:$('ajo').value,prioritas:$('ajq').value,deadline:$('ajl').value?new Date($('ajl').value).toISOString():''}}
   const{data,error}=await sb.rpc('ajukan_approval',{p_job:String(j.id),p_jenis:t,p_payload:p,p_alasan:alasan});
   if(error)return toast(error);
-  notif('approval_diajukan',j.id,data&&data.approval_id);$('da').close();$('dj').close();await load();alert('Pengajuan dikirim ke admin.')}
+  const ins=data&&data.instan;if(!ins)notif('approval_diajukan',j.id,data&&data.approval_id);$('da').close();$('dj').close();await load();alert(ins?'Perubahan langsung diterapkan.':'Dikirim ke admin. '+((data&&data.info)||''))}
 
 /* divisi: checklist tugas + papan job per divisi */
 const myDivs=()=>lead()||!me.divisi?Object.keys(DVL):[me.divisi];
