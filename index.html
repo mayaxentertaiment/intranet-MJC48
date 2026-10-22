@@ -106,7 +106,7 @@ dialog{border:0;border-radius:20px;width:min(560px,94vw);max-height:90vh;padding
  <aside class="right" id="rp"></aside>
 </div>
 
-<dialog id="dj"></dialog><dialog id="ds"></dialog><dialog id="de"></dialog><dialog id="dp"></dialog><dialog id="da"></dialog><dialog id="dx"></dialog>
+<dialog id="dj"></dialog><dialog id="ds"></dialog><dialog id="de"></dialog><dialog id="dp"></dialog><dialog id="da"></dialog><dialog id="dx"></dialog><dialog id="dm"></dialog>
 <dialog id="dr"><h3>Request baru</h3>
 <input id="rj" placeholder="Judul">
 <select id="rt"><option value="edit_foto">Edit foto</option><option value="edit_video">Edit video</option><option value="thumbnail">Thumbnail</option><option value="desain">Desain</option><option value="lainnya">Lainnya</option></select>
@@ -380,6 +380,39 @@ async function isiTplMgr(){
     MGR_TPL.forEach(([j,f,p,w,d,a,l,o])=>{const jd=r(j);if(dtasks.some(t=>t.divisi==='manager'&&t.assignee_id===m.id&&t.judul===jd&&t.deskripsi))return;
       rows.push({divisi:'manager',judul:jd,assignee_id:m.id,tim:tk,deadline:w?sun.toISOString():null,frekuensi:f,prioritas:p,deskripsi:r(d),alasan:r(a),output:r(o),langkah:l.map(x=>({t:r(x),x:0}))})})}));
   if(!rows.length)return toast('Semua job desk sudah ada');const{error}=await sb.from('div_tasks').insert(rows);if(error)return toast(error);load()}
+/* job desk baru: dibuat admin, otomatis ke manager yang memegang tim terpilih */
+const JD_FRK=['Sekali ini','Harian (maks. 24 jam)','Mingguan (Senin)','Mingguan (Jumat)','Mingguan (Minggu malam)','Bulanan','Setiap show','Tiap latihan / show'];
+const jdMgrs=t=>Object.values(staff).filter(s=>s.aktif&&s.staff_role==='manager'&&(t==='_all'||(s.tim||[]).includes(t)));
+function jdBaruUI(){
+  $('dm').innerHTML=`<h3>Job desk baru</h3><small>Tugas dikirim ke manager yang memegang tim yang dipilih. Tulis <code>{t}</code> di teks untuk diganti otomatis dengan nama tim (mis. "Tim MIII").</small>
+  <h4 class="s">Untuk tim</h4><select id="jt" onchange="jdPrev()">${TIMS.map(([k,l])=>`<option value="${k}">Tim ${l}</option>`).join('')}<option value="_all">Semua manager (semua tim yang dipegang)</option></select>
+  <div id="jp"></div>
+  <h4 class="s">Judul tugas</h4><input id="jj" placeholder="mis. Konfirmasi kostum show {t}">
+  <h4 class="s">Apa yang dikerjakan</h4><textarea id="jd" rows="3" placeholder="Jelaskan tugasnya dengan jelas"></textarea>
+  <h4 class="s">Kenapa penting</h4><textarea id="ja" rows="2" placeholder="Alasan tugas ini ada (opsional)"></textarea>
+  <h4 class="s">Langkah-langkah (satu baris satu langkah)</h4><textarea id="jl" rows="5" placeholder="Cek jadwal&#10;Hubungi venue&#10;Kirim ke grup"></textarea>
+  <h4 class="s">Hasil yang diharapkan</h4><input id="jo" placeholder="Target yang bisa dicek (opsional)">
+  <div class="row"><div><h4 class="s">Seberapa sering</h4><select id="jf">${JD_FRK.map(f=>`<option>${f}</option>`).join('')}</select></div><div><h4 class="s">Prioritas</h4><select id="jr">${PRI.map(p=>`<option ${p==='normal'?'selected':''}>${p}</option>`).join('')}</select></div></div>
+  <h4 class="s">Deadline (opsional)</h4><input id="jw" type="datetime-local">
+  <div class="row"><button onclick="$('dm').close()">Batal</button><button class="p" onclick="simpanJD()">Buat job desk</button></div>`;
+  jdPrev();$('dm').showModal()}
+function jdPrev(){const t=$('jt').value,ms=jdMgrs(t);
+  $('jp').innerHTML=ms.length?`<div class="panel" style="padding:8px 12px">${ms.map(m=>`<label style="display:flex;gap:8px;align-items:center;margin:4px 0"><input type="checkbox" class="jm" value="${m.id}" checked style="width:auto;margin:0"> <span><b>${esc(m.nama)}</b> <small>${(m.tim||[]).map(k=>'Tim '+timLbl(k)).join(', ')||'tim belum diatur'}</small></span></label>`).join('')}</div>`
+    :`<div class="empty">Belum ada manager aktif yang memegang tim ini. Atur dulu lewat menu Tim.</div>`}
+async function simpanJD(){
+  const j=($('jj').value||'').trim(),t=$('jt').value;if(!j)return toast('Judul wajib diisi');
+  const ids=[...document.querySelectorAll('.jm:checked')].map(c=>c.value);if(!ids.length)return toast('Pilih minimal satu manager');
+  const L=($('jl').value||'').split('\n').map(x=>x.trim()).filter(Boolean),d=$('jd').value.trim();
+  if(!d&&!L.length)return toast('Isi penjelasan tugas atau langkah-langkahnya');
+  const dl=$('jw').value?new Date($('jw').value).toISOString():null,f=$('jf').value==='Sekali ini'?null:$('jf').value;
+  const rows=[];ids.forEach(id=>{const m=staff[id];
+    const tims=t==='_all'?((m.tim&&m.tim.length)?m.tim:[null]):[t];
+    tims.forEach(tk=>{const T=tk?'Tim '+timLbl(tk):'timmu',r=x=>x.replaceAll('{t}',T);
+      rows.push({divisi:'manager',judul:r(j),assignee_id:id,tim:tk,deadline:dl,frekuensi:f,prioritas:$('jr').value,
+        deskripsi:d?r(d):null,alasan:$('ja').value.trim()?r($('ja').value.trim()):null,output:$('jo').value.trim()?r($('jo').value.trim()):null,
+        langkah:L.map(x=>({t:r(x),x:0}))})})});
+  const{error}=await sb.from('div_tasks').insert(rows);if(error)return toast(error);
+  $('dm').close();await load();alert(rows.length+' job desk dibuat.')}
 async function cekLangkah(id,i,v){const t=dtasks.find(x=>x.id===id);if(!t)return;const L=(t.langkah||[]).map((x,k)=>k===i?{...x,x:v?1:0}:x),all=L.length>0&&L.every(x=>x.x);
   const{error}=await sb.from('div_tasks').update({langkah:L,selesai:all,selesai_at:all?new Date().toISOString():null,selesai_oleh:all?me.id:null}).eq('id',id);if(error)toast(error);load()}
 const tkVis=t=>lead()||t.assignee_id===me.id||(!t.assignee_id&&me.divisi&&t.divisi===me.divisi);
@@ -397,7 +430,7 @@ function divView(){
   const mg=curDiv==='manager',T=dtasks.filter(t=>t.divisi===curDiv&&tkVis(t)&&(!mg||isA()||t.assignee_id===me.id)),open=T.filter(t=>!t.selesai).sort((a,b)=>(a.deadline?new Date(a.deadline):8e15)-(b.deadline?new Date(b.deadline):8e15)),done=T.filter(t=>t.selesai).slice(0,10);
   const mem=Object.values(staff).filter(s=>s.aktif&&(mg?s.staff_role==='manager':s.divisi===curDiv));
   return `<h3 class="sec"><span>Divisi</span></h3><div class="tabs">${ds.map(d=>`<button class="${d===curDiv?'on':''}" onclick="curDiv='${d}';render()">${DN(d)}</button>`).join('')}</div>
-  <h3 class="sec"><span>${lead()?'Task list '+DN(curDiv):'Task untukmu'} (${open.length} terbuka)</span>${mg&&isA()?'<button class="mini" onclick="isiTplMgr()">Isi job desk standar</button>':''}</h3>
+  <h3 class="sec"><span>${lead()?'Task list '+DN(curDiv):'Task untukmu'} (${open.length} terbuka)</span>${mg&&isA()?'<span class="row" style="flex:none;gap:6px"><button class="mini" onclick="jdBaruUI()">+ Job desk baru</button><button class="mini" onclick="isiTplMgr()">Isi job desk standar</button></span>':''}</h3>
   <div class="panel" style="margin-bottom:12px"><div class="row"><input id="dtj" placeholder="Tugas baru, mis. rapikan folder aset" onkeydown="if(event.key==='Enter')tambahDT()"><input id="dtd" type="datetime-local"></div>
   <div class="row"><select id="dta"><option value="">Semua di divisi ini</option>${mem.map(s=>`<option value="${s.id}">${esc(s.nama)}</option>`).join('')}</select><button class="p" onclick="tambahDT()">Tambah task</button></div></div>
   ${open.concat(done).map(ckItem).join('')||'<div class="empty">Belum ada task di divisi ini.</div>'}
