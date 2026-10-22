@@ -105,7 +105,7 @@ dialog{border:0;border-radius:20px;width:min(560px,94vw);max-height:90vh;padding
  <aside class="right" id="rp"></aside>
 </div>
 
-<dialog id="dj"></dialog><dialog id="ds"></dialog><dialog id="de"></dialog><dialog id="dp"></dialog><dialog id="da"></dialog>
+<dialog id="dj"></dialog><dialog id="ds"></dialog><dialog id="de"></dialog><dialog id="dp"></dialog><dialog id="da"></dialog><dialog id="dx"></dialog>
 <dialog id="dr"><h3>Request baru</h3>
 <input id="rj" placeholder="Judul">
 <select id="rt"><option value="edit_foto">Edit foto</option><option value="edit_video">Edit video</option><option value="thumbnail">Thumbnail</option><option value="desain">Desain</option><option value="lainnya">Lainnya</option></select>
@@ -356,21 +356,39 @@ async function kirimAjuan(){
   const ins=data&&data.instan;if(!ins)notif('approval_diajukan',j.id,data&&data.approval_id);$('da').close();$('dj').close();await load();alert(ins?'Perubahan langsung diterapkan.':'Dikirim ke admin. '+((data&&data.info)||''))}
 
 /* divisi: checklist tugas + papan job per divisi */
-const myDivs=()=>lead()||!me.divisi?Object.keys(DVL):[me.divisi];
+const DN=d=>d==='manager'?'Manager (job desk)':DVL[d];
+const MGR_TPL=[
+ ['Cek & konfirmasi jadwal panggung / show timmu untuk minggu depan',1],
+ ['Umumkan agenda tim (latihan, show, event) ke member & pastikan semua tahu',1],
+ ['Brief konten mingguan ke editor: poster show, teaser, recap (buat request job)',1],
+ ['Review hasil editor yang berstatus Review (target maks. 24 jam)',1],
+ ['Pastikan dokumentasi tiap show (foto & video) terambil dan terkirim ke editor',0],
+ ['Cek kelengkapan profil member timmu di website (foto, nama panggung, bio)',0],
+ ['Follow-up Tugas Member yang telat / belum dikerjakan',1],
+ ['Pantau kehadiran & kesiapan member (latihan, kostum, setlist)',0],
+ ['Laporan mingguan ke admin: job selesai/telat/revisi + hal yang butuh keputusan',1],
+ ['Evaluasi bulanan: konten mana yang paling disukai fans, usulan untuk bulan depan',0]];
+async function isiTplMgr(){
+  const ms=Object.values(staff).filter(s=>s.aktif&&s.staff_role==='manager');if(!ms.length)return toast('Belum ada manager aktif');
+  if(!confirm('Isi job desk standar untuk '+ms.length+' manager? Task dengan judul sama tidak ditambah dua kali.'))return;
+  const sun=new Date();sun.setDate(sun.getDate()+(7-sun.getDay())%7);sun.setHours(20,0,0,0);
+  const rows=[];ms.forEach(m=>MGR_TPL.forEach(([j,w])=>{if(!dtasks.some(t=>t.divisi==='manager'&&t.assignee_id===m.id&&t.judul===j))rows.push({divisi:'manager',judul:j,assignee_id:m.id,deadline:w?sun.toISOString():null})}));
+  if(!rows.length)return toast('Semua job desk sudah ada');const{error}=await sb.from('div_tasks').insert(rows);if(error)return toast(error);load()}
+const myDivs=()=>lead()||!me.divisi?Object.keys(DVL).concat(lead()?['manager']:[]):[me.divisi];
 const jobDiv=j=>JDIV[j.jenis]||staff[j.assignee_id]?.divisi||null;
 const ckItem=t=>{const od=!t.selesai&&t.deadline&&new Date(t.deadline)<new Date();
   return `<div class="ck ${t.selesai?'done':''}"><input type="checkbox" ${t.selesai?'checked':''} onchange="cekDT('${t.id}',this.checked)"><div><b>${esc(t.judul)}</b><small class="${od?'late':''}">${t.assignee_id?esc(nm(t.assignee_id)):'Semua di divisi'}${t.deadline?' | ⏰ '+fmt(t.deadline):''}${t.selesai&&t.selesai_oleh?' | selesai oleh '+esc(staff[t.selesai_oleh]?.nama||'-'):''}</small></div>${lead()||t.dibuat_oleh===me.id?`<button class="mini d" onclick="hapusDT('${t.id}')">Hapus</button>`:''}</div>`};
 function divView(){
   const ds=myDivs();if(!ds.includes(curDiv))curDiv=ds[0];
   const L=filt().filter(j=>{const d=jobDiv(j);return d===curDiv||d===null});
-  const T=dtasks.filter(t=>t.divisi===curDiv),open=T.filter(t=>!t.selesai).sort((a,b)=>(a.deadline?new Date(a.deadline):8e15)-(b.deadline?new Date(b.deadline):8e15)),done=T.filter(t=>t.selesai).slice(0,10);
-  const mem=Object.values(staff).filter(s=>s.aktif&&s.divisi===curDiv);
-  return `<h3 class="sec"><span>Divisi</span></h3><div class="tabs">${ds.map(d=>`<button class="${d===curDiv?'on':''}" onclick="curDiv='${d}';render()">${DVL[d]}</button>`).join('')}</div>
-  <h3 class="sec"><span>Task list ${DVL[curDiv]} (${open.length} terbuka)</span></h3>
+  const mg=curDiv==='manager',T=dtasks.filter(t=>t.divisi===curDiv&&(!mg||isA()||t.assignee_id===me.id)),open=T.filter(t=>!t.selesai).sort((a,b)=>(a.deadline?new Date(a.deadline):8e15)-(b.deadline?new Date(b.deadline):8e15)),done=T.filter(t=>t.selesai).slice(0,10);
+  const mem=Object.values(staff).filter(s=>s.aktif&&(mg?s.staff_role==='manager':s.divisi===curDiv));
+  return `<h3 class="sec"><span>Divisi</span></h3><div class="tabs">${ds.map(d=>`<button class="${d===curDiv?'on':''}" onclick="curDiv='${d}';render()">${DN(d)}</button>`).join('')}</div>
+  <h3 class="sec"><span>Task list ${DN(curDiv)} (${open.length} terbuka)</span>${mg&&isA()?'<button class="mini" onclick="isiTplMgr()">Isi job desk standar</button>':''}</h3>
   <div class="panel" style="margin-bottom:12px"><div class="row"><input id="dtj" placeholder="Tugas baru, mis. rapikan folder aset" onkeydown="if(event.key==='Enter')tambahDT()"><input id="dtd" type="datetime-local"></div>
   <div class="row"><select id="dta"><option value="">Semua di divisi ini</option>${mem.map(s=>`<option value="${s.id}">${esc(s.nama)}</option>`).join('')}</select><button class="p" onclick="tambahDT()">Tambah task</button></div></div>
   ${open.concat(done).map(ckItem).join('')||'<div class="empty">Belum ada task di divisi ini.</div>'}
-  <h3 class="sec"><span>Papan job ${DVL[curDiv]}</span></h3>${board(L)}`;
+  ${mg?'':`<h3 class="sec"><span>Papan job ${DVL[curDiv]}</span></h3>${board(L)}`}`;
 }
 async function tambahDT(){const j=($('dtj').value||'').trim();if(!j)return toast('Isi judul task');
   const{error}=await sb.from('div_tasks').insert({divisi:curDiv,judul:j,deadline:$('dtd').value?new Date($('dtd').value).toISOString():null,assignee_id:$('dta').value||null});
@@ -419,8 +437,24 @@ function team(){
   return `<h3 class="sec"><span>Tim (${L.length})</span></h3><div class="tg">${L.map(s=>{const n=jobs.filter(j=>j.assignee_id===s.id&&['dikerjakan','revisi'].includes(j.status)).length;
   const ad=isA()&&s.id!==me.id?`<div class="acts"><select onchange="upd('${s.id}',{staff_role:this.value})">${opt(ROLES.map(r=>[r,r]),s.staff_role)}</select>${['editor','kreatif'].includes(s.staff_role)?`<select onchange="upd('${s.id}',{divisi:this.value||null})">${opt(DIV.map(r=>[r,DVL[r]]),s.divisi||'','- tanpa divisi -')}</select>`:''}
   <button class="mini" onclick="tglAktif('${s.id}',${!s.aktif})">${s.aktif?'Nonaktifkan':'Aktifkan'}</button><button class="mini" onclick="resetPw('${s.id}')">Reset password</button><button class="mini d" onclick="hapusStaff('${s.id}')">Hapus</button></div>${s.staff_role==='manager'?`<div class="acts tim"><small style="margin:auto 4px auto 0">Tim:</small>${TIMS.map(([k,l])=>`<button class="mini ${(s.tim||[]).includes(k)?'p':''}" onclick="tglTim('${s.id}','${k}')">${l}</button>`).join('')}</div>`:''}`:'';
-  return `<div class="tc ${s.aktif?'':'off'}"><div class="av">${esc(s.nama[0]||'?')}</div><div><b>${esc(s.nama)}</b><small>${esc(s.staff_role)}${s.divisi?' | '+esc(s.divisi.replace('_',' ')):''}${s.username?' | @'+esc(s.username):''}${s.staff_role==='manager'?' | tim '+((s.tim||[]).map(timLbl).join(', ')||'belum diatur'):''}</small><small>${s.aktif?(s.staff_role==='editor'?n+' pekerjaan aktif':'Aktif'):'Nonaktif'}${s.must_change_password?' | belum ganti password':''}</small>${ad}</div></div>`}).join('')||'<div class="empty">Belum ada staff.</div>'}</div>`;
+  const eb=isA()?`<div class="acts"><button class="mini p" onclick="editStaff('${s.id}')">Edit profil</button></div>`:'';
+  return `<div class="tc ${s.aktif?'':'off'}"><div class="av">${esc(s.nama[0]||'?')}</div><div><b>${esc(s.nama)}</b><small>${esc(s.staff_role)}${s.divisi?' | '+esc(s.divisi.replace('_',' ')):''}${s.username?' | @'+esc(s.username):''}${s.staff_role==='manager'?' | tim '+((s.tim||[]).map(timLbl).join(', ')||'belum diatur'):''}</small><small>${s.aktif?(s.staff_role==='editor'?n+' pekerjaan aktif':'Aktif'):'Nonaktif'}${s.must_change_password?' | belum ganti password':''}</small>${eb}${ad}</div></div>`}).join('')||'<div class="empty">Belum ada staff.</div>'}</div>`;
 }
+function editStaff(id){const s=staff[id],own=id===me.id;window._xid=id;
+  $('dx').innerHTML=`<h3>Edit profil</h3><small>@${esc(s.username||'-')} (username tidak bisa diubah)</small>
+  <h4 class="s">Nama</h4><input id="xn" value="${esc(s.nama)}">
+  <h4 class="s">Email untuk notifikasi</h4><input id="xe" type="email" value="${esc(s.email_kontak||'')}">
+  <h4 class="s">Role${own?' (akunmu sendiri, tidak bisa diubah)':''}</h4><select id="xr" ${own?'disabled':''} onchange="xRole()">${opt(ROLES.map(r=>[r,r]),s.staff_role)}</select>
+  <div id="xd"></div><div class="row"><button onclick="$('dx').close()">Batal</button><button class="p" onclick="simpanStaff('${id}')">Simpan</button></div>`;
+  xRole();$('dx').showModal()}
+function xRole(){const s=staff[window._xid],r=$('xr').value;
+  $('xd').innerHTML=['editor','kreatif'].includes(r)?`<h4 class="s">Divisi</h4><select id="xv">${opt(DIV.map(d=>[d,DVL[d]]),s.divisi||'','- tanpa divisi -')}</select>`
+  :r==='manager'?`<h4 class="s">Tim yang dipegang</h4><div class="acts">${TIMS.map(([k,l])=>`<label><input type="checkbox" class="xt" value="${k}" ${(s.tim||[]).includes(k)?'checked':''}> ${l}</label>`).join(' ')}</div>`:''}
+async function simpanStaff(id){const n=$('xn').value.trim();if(n.length<2)return toast('Nama minimal 2 karakter');
+  const em=$('xe').value.trim();if(em&&!/^\S+@\S+\.\S+$/.test(em))return toast('Format email tidak valid');
+  const r=$('xr').value,p={nama:n,email_kontak:em||null,staff_role:r,divisi:['editor','kreatif'].includes(r)?($('xv').value||null):null,tim:r==='manager'?[...document.querySelectorAll('.xt:checked')].map(c=>c.value):[]};
+  const{error}=await sb.from('staff_profiles').update(p).eq('id',id);if(error)return toast(error);
+  $('dx').close();await loadStaff();if(id===me.id)me=staff[id];render()}
 async function ks(body){
   const{data,error}=await sb.functions.invoke('kelola-staff',{body});
   if(error){let m=error.message;if(error.name==='FunctionsFetchError')m='Function kelola-staff tidak bisa dihubungi. Pastikan sudah di-deploy dengan nama persis kelola-staff.';else{try{m=(await error.context.json()).error||m}catch{}}toast(m);return null}
