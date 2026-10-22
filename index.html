@@ -353,7 +353,7 @@ async function kirimAjuan(){
   else if(t==='edit'){if(!$('aje').value.trim())return toast('Judul wajib diisi');p={judul:$('aje').value,jenis:$('ajt').value,deskripsi:$('ajx').value,referensi:$('ajr').value,format:$('ajo').value,prioritas:$('ajq').value,deadline:$('ajl').value?new Date($('ajl').value).toISOString():''}}
   const{data,error}=await sb.rpc('ajukan_approval',{p_job:String(j.id),p_jenis:t,p_payload:p,p_alasan:alasan});
   if(error)return toast(error);
-  const ins=data&&data.instan;if(!ins)notif('approval_diajukan',j.id,data&&data.approval_id);$('da').close();$('dj').close();await load();alert(ins?'Perubahan langsung diterapkan.':'Dikirim ke admin. '+((data&&data.info)||''))}
+  const ins=data&&data.instan;notif(ins?'perubahan_instan':'approval_diajukan',j.id,data&&data.approval_id);$('da').close();$('dj').close();await load();alert(ins?'Perubahan langsung diterapkan.':'Dikirim ke admin. '+((data&&data.info)||''))}
 
 /* divisi: checklist tugas + papan job per divisi */
 const DN=d=>d==='manager'?'Manager (job desk)':DVL[d];
@@ -374,21 +374,23 @@ async function isiTplMgr(){
   const sun=new Date();sun.setDate(sun.getDate()+(7-sun.getDay())%7);sun.setHours(20,0,0,0);
   const rows=[];ms.forEach(m=>MGR_TPL.forEach(([j,w])=>{if(!dtasks.some(t=>t.divisi==='manager'&&t.assignee_id===m.id&&t.judul===j))rows.push({divisi:'manager',judul:j,assignee_id:m.id,deadline:w?sun.toISOString():null})}));
   if(!rows.length)return toast('Semua job desk sudah ada');const{error}=await sb.from('div_tasks').insert(rows);if(error)return toast(error);load()}
+const tkVis=t=>lead()||t.assignee_id===me.id||(!t.assignee_id&&me.divisi&&t.divisi===me.divisi);
+const jbVis=j=>lead()||j.assignee_id===me.id||j.requester_id===me.id||(!j.assignee_id&&(jobDiv(j)===null||(me.divisi&&jobDiv(j)===me.divisi)));
 const myDivs=()=>lead()||!me.divisi?Object.keys(DVL).concat(lead()?['manager']:[]):[me.divisi];
 const jobDiv=j=>JDIV[j.jenis]||staff[j.assignee_id]?.divisi||null;
 const ckItem=t=>{const od=!t.selesai&&t.deadline&&new Date(t.deadline)<new Date();
   return `<div class="ck ${t.selesai?'done':''}"><input type="checkbox" ${t.selesai?'checked':''} onchange="cekDT('${t.id}',this.checked)"><div><b>${esc(t.judul)}</b><small class="${od?'late':''}">${t.assignee_id?esc(nm(t.assignee_id)):'Semua di divisi'}${t.deadline?' | ⏰ '+fmt(t.deadline):''}${t.selesai&&t.selesai_oleh?' | selesai oleh '+esc(staff[t.selesai_oleh]?.nama||'-'):''}</small></div>${lead()||t.dibuat_oleh===me.id?`<button class="mini d" onclick="hapusDT('${t.id}')">Hapus</button>`:''}</div>`};
 function divView(){
   const ds=myDivs();if(!ds.includes(curDiv))curDiv=ds[0];
-  const L=filt().filter(j=>{const d=jobDiv(j);return d===curDiv||d===null});
-  const mg=curDiv==='manager',T=dtasks.filter(t=>t.divisi===curDiv&&(!mg||isA()||t.assignee_id===me.id)),open=T.filter(t=>!t.selesai).sort((a,b)=>(a.deadline?new Date(a.deadline):8e15)-(b.deadline?new Date(b.deadline):8e15)),done=T.filter(t=>t.selesai).slice(0,10);
+  const L=filt().filter(j=>{const d=jobDiv(j);return lead()?(d===curDiv||d===null):jbVis(j)});
+  const mg=curDiv==='manager',T=dtasks.filter(t=>t.divisi===curDiv&&tkVis(t)&&(!mg||isA()||t.assignee_id===me.id)),open=T.filter(t=>!t.selesai).sort((a,b)=>(a.deadline?new Date(a.deadline):8e15)-(b.deadline?new Date(b.deadline):8e15)),done=T.filter(t=>t.selesai).slice(0,10);
   const mem=Object.values(staff).filter(s=>s.aktif&&(mg?s.staff_role==='manager':s.divisi===curDiv));
   return `<h3 class="sec"><span>Divisi</span></h3><div class="tabs">${ds.map(d=>`<button class="${d===curDiv?'on':''}" onclick="curDiv='${d}';render()">${DN(d)}</button>`).join('')}</div>
-  <h3 class="sec"><span>Task list ${DN(curDiv)} (${open.length} terbuka)</span>${mg&&isA()?'<button class="mini" onclick="isiTplMgr()">Isi job desk standar</button>':''}</h3>
+  <h3 class="sec"><span>${lead()?'Task list '+DN(curDiv):'Task untukmu'} (${open.length} terbuka)</span>${mg&&isA()?'<button class="mini" onclick="isiTplMgr()">Isi job desk standar</button>':''}</h3>
   <div class="panel" style="margin-bottom:12px"><div class="row"><input id="dtj" placeholder="Tugas baru, mis. rapikan folder aset" onkeydown="if(event.key==='Enter')tambahDT()"><input id="dtd" type="datetime-local"></div>
   <div class="row"><select id="dta"><option value="">Semua di divisi ini</option>${mem.map(s=>`<option value="${s.id}">${esc(s.nama)}</option>`).join('')}</select><button class="p" onclick="tambahDT()">Tambah task</button></div></div>
   ${open.concat(done).map(ckItem).join('')||'<div class="empty">Belum ada task di divisi ini.</div>'}
-  ${mg?'':`<h3 class="sec"><span>Papan job ${DVL[curDiv]}</span></h3>${board(L)}`}`;
+  ${mg?'':`<h3 class="sec"><span>${lead()?'Papan job '+DVL[curDiv]:'Job untukmu & request baru divisi'}</span></h3>${board(L)}`}`;
 }
 async function tambahDT(){const j=($('dtj').value||'').trim();if(!j)return toast('Isi judul task');
   const{error}=await sb.from('div_tasks').insert({divisi:curDiv,judul:j,deadline:$('dtd').value?new Date($('dtd').value).toISOString():null,assignee_id:$('dta').value||null});
