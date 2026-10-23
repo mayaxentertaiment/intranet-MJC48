@@ -135,7 +135,7 @@ const needPw=/type=(invite|recovery)/.test(location.hash);
 let me=null,staff={},jobs=[],pend=[],appr=[],dtasks=[],sched=[],memb=[],calF='all',curDiv='',cur=null,sub=false,view='dash',calM=new Date();
 const lead=()=>['admin','manager'].includes(me.staff_role);
 const fmt=d=>d?new Date(d).toLocaleString('id-ID',{dateStyle:'medium',timeStyle:'short'}):'-';
-const late=j=>j.deadline&&j.status!=='selesai'&&new Date(j.deadline)<new Date();
+const late=j=>j.deadline&&j.status!=='selesai'&&new Date(j.deadline)<new Date()&&!(j.dikirim_at&&new Date(j.dikirim_at)<=new Date(j.deadline));
 const nm=id=>staff[id]?.nama||'Belum ditugaskan';
 const toast=e=>alert(e.message||e);
 const show=id=>['auth','pw','app','nope'].forEach(x=>$(x).classList.toggle('hide',x!==id));
@@ -237,7 +237,7 @@ function dash(){
   const L=filt().filter(j=>j.status!=='selesai').slice(0,8);
   return `<div class="hero"><h2>Selamat ${g}, ${esc(me.nama.split(' ')[0])}</h2>
   <p>${act.length} pekerjaan sedang berjalan, ${mine.length} ditugaskan kepadamu${tl.length?`, dan ${tl.length} sudah lewat deadline`:''}.</p>
-  ${agToday()}<button onclick="go('board')">Buka papan kerja</button>${apprPending()?`<button onclick="go('appr')" style="margin-left:8px">${isA()?apprPending()+' pengajuan menunggu':'Pengajuanku ('+apprPending()+')'}</button>`:''}</div>
+  ${agToday()}${bentrokNote()}<button onclick="go('board')">Buka papan kerja</button>${apprPending()?`<button onclick="go('appr')" style="margin-left:8px">${isA()?apprPending()+' pengajuan menunggu':'Pengajuanku ('+apprPending()+')'}</button>`:''}</div>
   <h3 class="sec">Status pekerjaan</h3><div class="stats">${Object.entries(ST).map(([k,[l,c]])=>`<button class="stat" onclick="go('board')"><span><span class="dot" style="background:${c}"></span>${l}</span><b>${jobs.filter(j=>j.status===k).length}</b></button>`).join('')}</div>
   <h3 class="sec">Pekerjaan berjalan</h3>${fbar()}<div class="tbl">${L.length?`<table><tr><th>Judul<th>Jenis<th>Penanggung jawab<th>Status<th>Deadline</tr>${L.map(row).join('')}</table>`:'<div class="empty">Belum ada pekerjaan. Buat request pertama lewat tombol di kanan atas.</div>'}</div>`;
 }
@@ -323,18 +323,42 @@ async function simpanMem(){
   const{error}=await sb.from('members').upsert(rec);if(error)return toast(error);
   const wasEdit=memEdit!=null;$('dmm').close();await load();alert(wasEdit?'Member diperbarui!':'Member ditambahkan!')}
 async function hapusMem(id){if(!confirm('Hapus member ini?'))return;const{error}=await sb.from('members').delete().eq('id',id);if(error)return toast(error);load()}
+const DUR=120;
+function tRange(s){
+  const m=String(s||'').match(/(\d{1,2})[:.](\d{2})(?:\s*(?:-|–|s\/d|sd|sampai)\s*(\d{1,2})[:.](\d{2}))?/);if(!m)return null;
+  const a=Number(m[1])*60+Number(m[2]),b=m[3]!=null?Number(m[3])*60+Number(m[4]):a+DUR;return[a,b>a?b:a+DUR]}
+function bentrok(){
+  if(!lead())return[];
+  const t=myAgTims(),today=ymd2(new Date()),by={},out=[],vn=v=>String(v||'').trim().toLowerCase();
+  sched.filter(x=>x.date&&x.date>=today&&(agKey(x)==='all'||t.includes(agKey(x)))).forEach(x=>(by[x.date]=by[x.date]||[]).push(x));
+  Object.entries(by).forEach(([d,L])=>{
+    for(let i=0;i<L.length;i++)for(let k=i+1;k<L.length;k++){
+      const a=L[i],b=L[k],ra=tRange(a.time),rb=tRange(b.time),why=[];
+      if(vn(a.venue)&&vn(a.venue)===vn(b.venue))why.push('lokasi sama');
+      if(a.member!=null&&a.member!==''&&String(a.member)===String(b.member))why.push('member sama');
+      const ka=agKey(a);if(ka!=='all'&&ka===agKey(b))why.push('tim sama');
+      if(!why.length)continue;
+      if(ra&&rb&&!(ra[0]<rb[1]&&ra[1]>rb[0]))continue;
+      out.push({d,a,b,why,pasti:!!(ra&&rb)})}});
+  return out.sort((x,y)=>x.d.localeCompare(y.d))}
+function bentrokView(){
+  const L=bentrok();if(!L.length)return'';
+  const ln=x=>`<b>${esc(x.title||'(tanpa judul)')}</b> <small>${esc([x.time,x.venue].filter(Boolean).join(' | '))}</small>`;
+  return `<h3 class="sec"><span>⚠ Bentrok jadwal (${L.length})</span></h3>`+L.slice(0,10).map(x=>`<div class="agd" style="border-left:4px solid #f59e0b"><h4>${dayLbl(x.d)}${x.pasti?'':' | jam belum lengkap, cek manual'}</h4><p>${ln(x.a)}<br>${ln(x.b)}<br><small>Bentrok: ${x.why.join(', ')}</small></p></div>`).join('')+(L.length>10?`<small>+${L.length-10} bentrok lainnya</small>`:'')}
+const bentrokNote=()=>{const n=bentrok().length;return n?`<p style="margin-top:6px">⚠ ${n} bentrok jadwal. <u style="cursor:pointer" onclick="go('cal')">Lihat</u></p>`:''};
 function cal(){
   const y=calM.getFullYear(),m=calM.getMonth(),first=(new Date(y,m,1).getDay()+6)%7,n=new Date(y,m+1,0).getDate(),today=new Date();
   let cells=['Sen','Sel','Rab','Kam','Jum','Sab','Min'].map(d=>`<div class="h">${d}</div>`).join('')+'<div></div>'.repeat(first);
   const L=filt();
+  const BK=new Set(bentrok().map(x=>x.d));
   for(let d=1;d<=n;d++){const dt=new Date(y,m,d),ds=ymd2(dt),
       ev=calF==='agenda'?[]:L.filter(j=>j.deadline&&sameDay(j.deadline,dt)),
       ag=calF==='job'?[]:agendaOn(ds),
       chips=ag.map(x=>`<button class="ev ${x.k==='b'?'bd2':'ag'}" title="${esc(x.sub)}" onclick="agDay('${ds}')">${esc((x.time?x.time+' ':'')+x.text)}</button>`).concat(ev.map(j=>`<button class="ev" style="background:${ST[j.status][1]}" onclick="openJob('${j.id}')">${esc(j.judul)}</button>`));
-    cells+=`<div class="day ${sameDay(dt,today)?'td':''}"><b>${d}</b>${chips.slice(0,3).join('')}${chips.length>3?`<small style="cursor:pointer" onclick="${ag.length?`agDay('${ds}')`:''}">+${chips.length-3} lagi</small>`:''}</div>`}
+    cells+=`<div class="day ${sameDay(dt,today)?'td':''}"><b>${d}${BK.has(ds)?' ⚠':''}</b>${chips.slice(0,3).join('')}${chips.length>3?`<small style="cursor:pointer" onclick="${ag.length?`agDay('${ds}')`:''}">+${chips.length-3} lagi</small>`:''}</div>`}
   const ctl=lead()?`<select style="width:auto;margin:0" onchange="calF=this.value;render()"><option value="all" ${calF==='all'?'selected':''}>Job dan agenda</option><option value="job" ${calF==='job'?'selected':''}>Hanya deadline job</option><option value="agenda" ${calF==='agenda'?'selected':''}>Hanya agenda</option></select>`:'';
   const sum=lead()?`<h3 class="sec"><span>Agenda 7 hari ke depan${isA()?'':' ('+((me.tim||[]).map(timLbl).join(', ')||'tim belum diatur')+')'}</span><button class="mini" onclick="kirimRingkas()">${isA()?'Kirim ringkasan ke semua manager':'Kirim ringkasan ke emailku'}</button></h3>${agenda7()}`:'';
-  return sum+`<h3 class="sec"><span>${calM.toLocaleDateString('id-ID',{month:'long',year:'numeric'})}</span><span class="row" style="flex:none;align-items:center">${ctl}<button onclick="calM.setMonth(calM.getMonth()-1);render()">‹</button><button onclick="calM=new Date();render()">Hari ini</button><button onclick="calM.setMonth(calM.getMonth()+1);render()">›</button></span></h3><div class="cal">${cells}</div>`;
+  return bentrokView()+sum+`<h3 class="sec"><span>${calM.toLocaleDateString('id-ID',{month:'long',year:'numeric'})}</span><span class="row" style="flex:none;align-items:center">${ctl}<button onclick="calM.setMonth(calM.getMonth()-1);render()">‹</button><button onclick="calM=new Date();render()">Hari ini</button><button onclick="calM.setMonth(calM.getMonth()+1);render()">›</button></span></h3><div class="cal">${cells}</div>`;
 }
 function right(){
   const t=new Date(),mon=new Date(t);mon.setDate(t.getDate()-((t.getDay()+6)%7));
@@ -596,11 +620,28 @@ function stat(){
     const mine=jobs.filter(j=>j.assignee_id===e.id),done=mine.filter(j=>j.status==='selesai'&&j.selesai_at),
     act=mine.filter(j=>['dikerjakan','revisi'].includes(j.status)).length,
     d30=done.filter(j=>new Date(j.selesai_at)>Date.now()-30*864e5).length,
-    tm=done.filter(j=>j.created_at),avg=tm.length?tm.reduce((a,j)=>a+(new Date(j.selesai_at)-new Date(j.created_at)),0)/tm.length/864e5:null,
-    dl=done.filter(j=>j.deadline),ot=dl.length?Math.round(dl.filter(j=>new Date(j.selesai_at)<=new Date(j.deadline)).length/dl.length*100):null;
+    tm=done.filter(j=>j.created_at&&j.dikirim_at),avg=tm.length?tm.reduce((a,j)=>a+(new Date(j.dikirim_at)-new Date(j.created_at)),0)/tm.length/864e5:null,
+    dl=done.filter(j=>j.deadline&&j.dikirim_at),ot=dl.length?Math.round(dl.filter(j=>new Date(j.dikirim_at)<=new Date(j.deadline)).length/dl.length*100):null;
     return `<tr><td><b>${esc(e.nama)}</b>${e.aktif?'':' <small>(nonaktif)</small>'}</td><td>${act}</td><td>${d30}</td><td>${done.length}</td><td>${avg==null?'-':avg.toFixed(1)+' hari'}</td><td>${ot==null?'-':ot+'%'}</td></tr>`}).join('');
   return `<h3 class="sec"><span>Statistik editor</span></h3><div class="tbl"><table><tr><th>Editor<th>Aktif<th>Selesai 30 hari<th>Total selesai<th>Rata-rata pengerjaan<th>Tepat waktu</tr>${rows||'<tr><td colspan=6 class="empty">Belum ada editor.'}</table></div>
-  <small style="color:var(--m)">Rata-rata pengerjaan dihitung dari request dibuat sampai disetujui. Tepat waktu = disetujui sebelum deadline.</small>`}
+  <small style="color:var(--m)">Rata-rata pengerjaan dihitung dari request dibuat sampai hasil pertama dikirim. Tepat waktu = hasil pertama dikirim sebelum deadline. Waktu review manager tidak dihitung.</small>`+statMgr()}
+
+let sm=ymd2(new Date()).slice(0,7);
+function statMgr(){
+  const[y,m]=sm.split('-').map(Number),a=new Date(y,m-1,1),b=new Date(y,m,1),now=new Date();
+  const inM=t=>{const d=new Date(t.deadline||t.created_at);return d>=a&&d<b};
+  const rows=Object.values(staff).filter(s=>s.staff_role==='manager'&&(isA()||s.id===me.id)).map(s=>{
+    const T=dtasks.filter(t=>t.divisi==='manager'&&t.assignee_id===s.id&&inM(t)),
+    due=T.filter(t=>t.deadline&&(t.selesai?t.selesai_at:new Date(t.deadline)<now)),
+    tepat=due.filter(t=>t.selesai&&new Date(t.selesai_at)<=new Date(t.deadline)).length,
+    tlt=due.filter(t=>t.selesai&&new Date(t.selesai_at)>new Date(t.deadline)).length,
+    lwt=due.filter(t=>!t.selesai).length,
+    hk=T.filter(t=>t.judul.startsWith('Kehadiran')),
+    pct=due.length?Math.round(tepat/due.length*100):null;
+    return `<tr><td><b>${esc(s.nama)}</b>${s.aktif?'':' <small>(nonaktif)</small>'}<br><small>${(s.tim||[]).map(timLbl).join(', ')||'-'}</small></td><td>${T.filter(t=>t.selesai).length}/${T.length}</td><td>${tepat}</td><td>${tlt}</td><td class="${lwt?'late':''}">${lwt}</td><td>${pct==null?'-':pct+'%'}</td><td>${hk.length?hk.filter(t=>t.selesai).length+'/'+hk.length:'-'}</td></tr>`}).join('');
+  return `<h3 class="sec"><span>Kepatuhan job desk manager</span><input type="month" value="${sm}" style="width:auto;margin:0" onchange="sm=this.value;render()"></h3>
+  <div class="tbl"><table><tr><th>Manager<th>Task selesai<th>Tepat waktu<th>Terlambat<th>Terlewat<th>Kepatuhan<th>Rekap kehadiran</tr>${rows||'<tr><td colspan=7 class="empty">Belum ada manager.</td></tr>'}</table></div>
+  <small style="color:var(--m)">Kepatuhan = task tepat waktu dibagi task ber-deadline yang sudah jatuh tempo atau selesai. Task yang belum jatuh tempo tidak dihitung. Task tanpa deadline hanya masuk kolom "Task selesai".</small>`}
 
 /* tim: nonaktif, hapus, reset password, ubah role (admin) */
 function team(){
